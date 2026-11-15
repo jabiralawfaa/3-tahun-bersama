@@ -185,10 +185,10 @@ function Word({
       animate={{
         y: active ? -2 : 0,
         color: active
-          ? "oklch(0.85 0.14 65)"
+          ? "var(--amber-warm)"
           : "oklch(0.86 0.01 270 / 0.55)",
         textShadow: active
-          ? "0 0 18px oklch(0.78 0.14 65 / 0.45)"
+          ? "0 0 18px color-mix(in srgb, var(--amber-warm) 45%, transparent)"
           : "0 0 0px rgba(0,0,0,0)",
       }}
       transition={{
@@ -197,7 +197,7 @@ function Word({
         damping: 22,
         mass: 0.6,
       }}
-      style={accentActive ? { color: "oklch(0.85 0.14 65)" } : undefined}
+      style={accentActive ? { color: "var(--amber-warm)" } : undefined}
     >
       {text}
     </motion.span>

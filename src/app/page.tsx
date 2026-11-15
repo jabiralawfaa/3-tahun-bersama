@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Terminal, ArrowRight, CornerDownLeft, Lock } from "lucide-react";
-import { memoryByCode } from "@/data/memories";
 import { useAuthStore } from "@/lib/auth-store";
 
 /**
@@ -25,6 +24,7 @@ export default function GatewayPage() {
   const [error, setError] = useState<string | null>(null);
   const [shakeKey, setShakeKey] = useState(0);
   const [unlocking, setUnlocking] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [booted, setBooted] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const unlock = useAuthStore((s) => s.unlock);
@@ -38,30 +38,37 @@ export default function GatewayPage() {
   }, []);
 
   const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       const code = value.trim();
       if (!code) return;
-
-      const memory = memoryByCode(code);
-      if (!memory) {
-        setError("Kode nama tidak dikenali. Coba sekali lagi.");
-        setShakeKey((k) => k + 1);
-        setValue("");
-        setTimeout(() => inputRef.current?.focus(), 50);
-        return;
+      setChecking(true);
+      try {
+        const res = await fetch("/api/validate-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+        if (!data.ok || !data.slug) {
+          setError("Kode nama tidak dikenali. Coba sekali lagi.");
+          setShakeKey((k) => k + 1);
+          setValue("");
+          setChecking(false);
+          setTimeout(() => inputRef.current?.focus(), 50);
+          return;
+        }
+        // Kode benar — buka kunci + pemicu gesture audio.
+        setError(null);
+        unlock(data.slug);
+        setUnlocking(true);
+        setTimeout(() => {
+          router.push(`/for/${data.slug}`);
+        }, 900);
+      } catch {
+        setError("Sambungan terputus. Coba lagi.");
+        setChecking(false);
       }
-
-      // Kode benar — buka kunci + pemicu gesture audio (akan diputar
-      // di halaman berikutnya melalui gesture navigasi ini).
-      setError(null);
-      unlock(memory.slug);
-      setUnlocking(true);
-
-      // Jeda singkat agar animasi fade/scale terlihat sebelum pindah.
-      setTimeout(() => {
-        router.push(`/for/${memory.slug}`);
-      }, 900);
     },
     [value, unlock, router],
   );
@@ -187,9 +194,10 @@ export default function GatewayPage() {
 
                 <button
                   type="submit"
-                  className="mt-5 inline-flex items-center gap-2 rounded-lg bg-amber-warm/15 px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] text-amber-warm transition-colors hover:bg-amber-warm/25"
+                  disabled={checking}
+                  className="mt-5 inline-flex items-center gap-2 rounded-lg bg-amber-warm/15 px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] text-amber-warm transition-colors hover:bg-amber-warm/25 disabled:opacity-50"
                 >
-                  Buka arsip
+                  {checking ? "Memeriksa…" : "Buka arsip"}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </motion.form>

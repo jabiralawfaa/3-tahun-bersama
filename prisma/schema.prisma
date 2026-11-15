@@ -30,3 +30,36 @@ model Post {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+/// Arsip kenangan kelulusan — satu entri per orang (kode nama).
+model Memory {
+  id           String   @id @default(cuid())
+  /// Kode nama rahasia (diketik di gerbang)
+  code         String   @unique
+  /// URL slug untuk /for/[slug]
+  slug         String   @unique
+  name         String
+  role         String   @default("Teman Kelas")
+  themeLabel   String   @default("Interactive Design Canvas & Editorial Motion")
+  /// Warna aksen utama (hex, mis. #e8a23d) — per orang
+  accent       String   @default("#e8a23d")
+  /// Warna aksen sekunder (hex)
+  accentSoft   String   @default("#d96a4f")
+  /// Warna latar canvas (hex)
+  background   String   @default("#13131f")
+  /// Jenis dekorasi SVG: bezier | constellation | orbit
+  decoration   String   @default("bezier")
+  /// Path file audio (relatif /public, mis. /audio/starla.mp3)
+  audioSrc     String
+  songTitle    String
+  songArtist   String
+  /// String format Enhanced LRC
+  enhancedLrc  String
+  /// JSON string LineConfig[] (refleksi + preset animasi per baris)
+  lineConfig   String   @default("[]")
+  /// Pesan penutup saat lagu selesai
+  finalMessage String
+  finalFrameLabel String @default("Final_Confession.tsx")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

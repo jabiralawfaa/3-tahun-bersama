@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { memoryBySlug } from "@/data/memories";
+import type { Memory } from "@/data/memories";
 import { parseEnhancedLrc, findActiveLineIndex } from "@/lib/lrc";
 import { useAuthStore } from "@/lib/auth-store";
 import { AnimatedBackground } from "./components/AnimatedBackground";
@@ -57,9 +57,11 @@ export default function PersonalPage() {
   // Backup: flag dari persist middleware (untuk async storage bila ada).
   const storeHydrated = useAuthStore((s) => s._hasHydrated ?? false);
 
-  const memory = memoryBySlug(slug);
+  // Memory di-fetch dari API (DB). Loading state sampai tersedia.
+  const [memory, setMemory] = useState<Memory | null>(null);
+  const [loadingMemory, setLoadingMemory] = useState(true);
 
-  // Parse LRC sekali (memo). Aman walau memory undefined.
+  // Parse LRC sekali (memo). Aman walau memory belum tersedia.
   const lines = useMemo(() => {
     if (!memory) return [];
     return parseEnhancedLrc(memory.enhancedLrc, memory.lineConfig);
@@ -80,16 +82,41 @@ export default function PersonalPage() {
     [lines, currentTime],
   );
 
-  /* ------------------- Route guard ------------------- */
+  /* ------------------- Route guard + fetch memory ------------------- */
   // Tunggu sinyal mount client sebelum mengambil keputusan redirect,
   // agar tidak salah menganggap "belum di-unlock" saat load pertama.
   const hasHydrated = isClient || storeHydrated;
   useEffect(() => {
     if (!hasHydrated) return;
-    if (!memory || !isUnlocked(slug)) {
+    if (!isUnlocked(slug)) {
       router.replace("/");
+      return;
     }
-  }, [hasHydrated, memory, slug, isUnlocked, router]);
+    // Sudah unlock → ambil data memory dari API.
+    // (loadingMemory sudah true dari state awal; tidak perlu setState
+    //  sinkron di sini untuk menghindari cascading render.)
+    let cancelled = false;
+    fetch(`/api/memories/by-slug/${encodeURIComponent(slug)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.memory) {
+          setMemory(data.memory);
+        } else {
+          // Tidak ditemukan → kembali ke gerbang.
+          router.replace("/");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) router.replace("/");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingMemory(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasHydrated, slug, isUnlocked, router]);
 
   /* ------------------- Sinkronisasi waktu presisi (rAF) ------------------- */
   // Loop rAF berjalan terus selama komponen ter-mount dan hanya menulis
@@ -197,21 +224,11 @@ export default function PersonalPage() {
   }, [hasHydrated, memory?.slug, isUnlocked, slug]);
 
   /* ------------------- Render ------------------- */
-  if (!memory) {
-    return (
-      <main className="relative min-h-screen flex items-center justify-center bg-midnight-deep">
-        <p className="font-mono text-sm text-muted-foreground">
-          Memeriksa arsip…
-        </p>
-      </main>
-    );
-  }
-
   // Tunggu hydrasi sebelum mengecek proteksi (cegah flash redirect).
   if (hasHydrated && !isUnlocked(slug)) {
     return (
       <main className="relative min-h-screen flex flex-col items-center justify-center gap-4 bg-midnight-deep px-6 text-center">
-        <p className="font-mono text-xs uppercase tracking-[0.25em] text-amber-warm/80">
+        <p className="font-mono text-xs uppercase tracking-[0.25em] text-[var(--accent,#e8a23d)]/80">
           access-denied
         </p>
         <p className="text-sm text-muted-foreground">
@@ -228,10 +245,34 @@ export default function PersonalPage() {
     );
   }
 
+  // Loading: tunggu data memory dari API.
+  if (loadingMemory || !memory) {
+    return (
+      <main className="relative min-h-screen flex items-center justify-center bg-midnight-deep">
+        <p className="font-mono text-sm text-muted-foreground">
+          Memeriksa arsip…
+        </p>
+      </main>
+    );
+  }
+
   const progress = duration > 0 ? currentTime / duration : 0;
 
+  // Terapkan warna aksen per-orang dengan meng-override CSS variable
+  // --amber-warm / --rose-warm pada wrapper ini. Semua kelas Tailwind
+  // *-amber-warm / *-rose-warm (plus glow/gradient di globals.css) akan
+  // otomatis memakai warna orang ini — tanpa perlu mengubah setiap kelas.
+  const themeVars = {
+    "--amber-warm": memory.theme.accent,
+    "--rose-warm": memory.theme.accentSoft,
+    backgroundColor: memory.theme.background,
+  } as React.CSSProperties;
+
   return (
-    <main className="relative min-h-screen flex flex-col overflow-hidden bg-midnight-deep">
+    <main
+      className="relative min-h-screen flex flex-col overflow-hidden"
+      style={themeVars}
+    >
       {/* Audio element (tersembunyi) */}
       <audio
         ref={audioRef}

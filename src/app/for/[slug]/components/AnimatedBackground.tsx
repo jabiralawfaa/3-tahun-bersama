@@ -96,7 +96,7 @@ function BezierLayer({ activeBait }: { activeBait: number }) {
         <g key={i}>
           <motion.path
             d={d}
-            stroke="oklch(0.78 0.14 65)"
+            stroke="var(--amber-warm)"
             strokeWidth={1.25}
             strokeDasharray="2 6"
             initial={{ pathLength: 0, opacity: 0 }}
@@ -158,8 +158,8 @@ function BezierNodes({
             width={8}
             height={8}
             rx={1.5}
-            fill="oklch(0.12 0.02 270)"
-            stroke="oklch(0.78 0.14 65)"
+            fill="var(--canvas-bg, oklch(0.12 0.02 270))"
+            stroke="var(--amber-warm)"
             strokeWidth={1.25}
           />
           {/* Garis handle pen-tool */}
@@ -168,7 +168,8 @@ function BezierNodes({
             y1={n.y}
             x2={n.x + (i % 2 === 0 ? 36 : -36)}
             y2={n.y + (i % 2 === 0 ? 24 : -24)}
-            stroke="oklch(0.78 0.14 65 / 0.4)"
+            stroke="var(--amber-warm)"
+            strokeOpacity={0.4}
             strokeWidth={0.75}
             strokeDasharray="2 3"
             initial={{ pathLength: 0 }}
@@ -224,7 +225,8 @@ function ConstellationLayer({ activeBait }: { activeBait: number }) {
         <motion.polyline
           key={li}
           points={pathStars.map((s) => `${s.x},${s.y}`).join(" ")}
-          stroke="oklch(0.82 0.12 70 / 0.5)"
+          stroke="var(--amber-warm)"
+          strokeOpacity={0.5}
           strokeWidth={0.8}
           strokeDasharray="3 5"
           initial={{ pathLength: 0, opacity: 0 }}
@@ -249,12 +251,13 @@ function ConstellationLayer({ activeBait }: { activeBait: number }) {
             delay: i * 0.18,
           }}
         >
-          <circle cx={s.x} cy={s.y} r={1.6} fill="oklch(0.85 0.1 70)" />
+          <circle cx={s.x} cy={s.y} r={1.6} fill="var(--amber-warm)" />
           <circle
             cx={s.x}
             cy={s.y}
             r={4}
-            fill="oklch(0.82 0.12 70 / 0.12)"
+            fill="var(--amber-warm)"
+            fillOpacity={0.12}
           />
         </motion.g>
       ))}
@@ -290,7 +293,8 @@ function OrbitLayer({ activeBait }: { activeBait: number }) {
           cy={ring.cy}
           rx={ring.r}
           ry={ring.r * (0.42 + ((activeBait + i) % 3) * 0.04)}
-          stroke="oklch(0.78 0.14 65 / 0.35)"
+          stroke="var(--amber-warm)"
+          strokeOpacity={0.35}
           strokeWidth={0.8}
           strokeDasharray="2 7"
           animate={{ rotate: ring.rot + 360 }}
@@ -307,7 +311,7 @@ function OrbitLayer({ activeBait }: { activeBait: number }) {
         <motion.circle
           key={`node-${i}`}
           r={3}
-          fill="oklch(0.82 0.14 65)"
+          fill="var(--amber-warm)"
           animate={{
             cx: [ring.cx - ring.r, ring.cx + ring.r, ring.cx - ring.r],
             cy: [
@@ -350,8 +354,9 @@ function Sparkles({ activeBait }: { activeBait: number }) {
           style={{
             left: `${s.x}%`,
             top: `${s.y}%`,
-            background: "oklch(0.85 0.12 70)",
-            boxShadow: "0 0 6px 1px oklch(0.82 0.12 70 / 0.5)",
+            background: "var(--amber-warm)",
+            boxShadow:
+              "0 0 6px 1px color-mix(in srgb, var(--amber-warm) 50%, transparent)",
           }}
           animate={{ opacity: [0, 0.9, 0], scale: [0.5, 1.3, 0.5] }}
           transition={{
@@ -387,8 +392,8 @@ function DesignerCursor({ activeBait }: { activeBait: number }) {
       <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
         <path
           d="M3 3 L3 16 L7 12.5 L9.5 19 L12 18 L9.5 11.5 L15 11.5 Z"
-          fill="oklch(0.12 0.02 270)"
-          stroke="oklch(0.85 0.12 70)"
+          fill="var(--canvas-bg, oklch(0.12 0.02 270))"
+          stroke="var(--amber-warm)"
           strokeWidth="1"
         />
       </svg>

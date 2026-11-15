@@ -96,14 +96,18 @@ export function AudioPlayer({
                     className="absolute inset-y-0 left-0 rounded-full"
                     style={{
                       background:
-                        "linear-gradient(90deg, oklch(0.78 0.14 65), oklch(0.72 0.16 25))",
+                        "linear-gradient(90deg, var(--amber-warm), var(--rose-warm))",
                     }}
                     animate={{ width: `${pct}%` }}
                     transition={{ duration: 0.15, ease: "linear" }}
                   />
                   {/* Titik indikator */}
                   <motion.div
-                    className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-white/40 bg-amber-warm shadow-[0_0_10px_oklch(0.78_0.14_65/0.6)]"
+                    className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-white/40 bg-amber-warm"
+                    style={{
+                      boxShadow:
+                        "0 0 10px color-mix(in srgb, var(--amber-warm) 60%, transparent)",
+                    }}
                     animate={{ left: `calc(${pct}% - 5px)` }}
                     transition={{ duration: 0.15, ease: "linear" }}
                   />

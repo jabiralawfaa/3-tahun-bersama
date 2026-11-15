@@ -41,6 +41,8 @@ export interface LineConfig {
 }
 
 export interface Memory {
+  /** ID internal (dari DB). Opsional untuk entri yang belum disimpan. */
+  id?: string;
   /** Kode nama rahasia yang diketik di halaman gerbang */
   code: string;
   /** URL slug untuk rute /for/[slug] */
@@ -65,6 +67,9 @@ export interface Memory {
   finalMessage: string;
   /** Label monospace kecil di sudut frame penutup */
   finalFrameLabel: string;
+  /** Timestamp (dari DB) */
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 /* ------------------------------------------------------------------
@@ -229,39 +234,126 @@ const STARLA_LINE_CONFIG: LineConfig[] = [
   },
 ];
 
-export const memories: Memory[] = [
-  {
-    code: "starla",
-    slug: "starla",
-    name: "Starla",
-    role: "Mahasiswa IT & UI/UX Designer",
-    theme: {
-      label: "Interactive Design Canvas & Editorial Motion",
-      accent: "oklch(0.78 0.14 65)",
-      accentSoft: "oklch(0.72 0.16 25)",
-      background: "oklch(0.12 0.02 270)",
-      decoration: "bezier",
-    },
-    audioSrc: "/audio/surat-cinta-untuk-starla.mp3",
-    songTitle: "Surat Cinta untuk Starla",
-    songArtist: "Virgoun",
-    enhancedLrc: STARLA_LRC,
-    lineConfig: STARLA_LINE_CONFIG,
-    finalMessage:
-      "Entah kamu sadar atau tidak, selama 3 tahun ini, aku mencintaimu",
-    finalFrameLabel: "Final_Confession.tsx",
-  },
+/* ------------------------------------------------------------------
+ * Nilai default tema (dipakai saat entri baru dibuat di dashboard).
+ * Palet hangat-lampu-malam sebagai tanda tangan koleksi.
+ * ------------------------------------------------------------------ */
+export const MEMORY_DEFAULTS = {
+  role: "Teman Kelas",
+  themeLabel: "Interactive Design Canvas & Editorial Motion",
+  /** Amber hangat */
+  accent: "#e8a23d",
+  /** Rose hangat */
+  accentSoft: "#d96a4f",
+  /** Deep midnight */
+  background: "#13131f",
+  decoration: "bezier" as DecorationKind,
+  finalFrameLabel: "Final_Confession.tsx",
+};
+
+/** Daftar preset animasi yang valid (untuk dropdown dashboard). */
+export const ANIMATION_PRESETS: AnimationPreset[] = [
+  "blur-fade",
+  "zoom-in",
+  "zoom-out",
+  "3d-flip",
 ];
 
-/** Peta cepat slug -> Memory */
-export const memoryBySlug = (slug: string): Memory | undefined =>
-  memories.find((m) => m.slug === slug);
+/** Daftar jenis dekorasi yang valid. */
+export const DECORATION_KINDS: DecorationKind[] = [
+  "bezier",
+  "constellation",
+  "orbit",
+];
 
-/** Peta cepat code (case-insensitive) -> Memory */
-export const memoryByCode = (code: string): Memory | undefined =>
-  memories.find(
-    (m) => m.code.toLowerCase() === code.trim().toLowerCase(),
-  );
+/* ------------------------------------------------------------------
+ * Seed: entri starla (dipakai scripts/seed.ts untuk mengisi DB awal).
+ * ------------------------------------------------------------------ */
+export const STARLA_SEED: Memory = {
+  code: "starla",
+  slug: "starla",
+  name: "Starla",
+  role: "Mahasiswa IT & UI/UX Designer",
+  theme: {
+    label: "Interactive Design Canvas & Editorial Motion",
+    accent: "#e8a23d",
+    accentSoft: "#d96a4f",
+    background: "#13131f",
+    decoration: "bezier",
+  },
+  audioSrc: "/audio/surat-cinta-untuk-starla.mp3",
+  songTitle: "Surat Cinta untuk Starla",
+  songArtist: "Virgoun",
+  enhancedLrc: STARLA_LRC,
+  lineConfig: STARLA_LINE_CONFIG,
+  finalMessage:
+    "Entah kamu sadar atau tidak, selama 3 tahun ini, aku mencintaimu",
+  finalFrameLabel: "Final_Confession.tsx",
+};
 
-/** Daftar slug yang tersedia (untuk navigasi internal). */
-export const allSlugs = memories.map((m) => m.slug);
+/* ------------------------------------------------------------------
+ * Serialisasi DB <-> tipe Memory
+ * ------------------------------------------------------------------ */
+
+/** Bentuk mentah baris DB (Prisma). */
+export interface MemoryDbRow {
+  id: string;
+  code: string;
+  slug: string;
+  name: string;
+  role: string;
+  themeLabel: string;
+  accent: string;
+  accentSoft: string;
+  background: string;
+  decoration: string;
+  audioSrc: string;
+  songTitle: string;
+  songArtist: string;
+  enhancedLrc: string;
+  lineConfig: string; // JSON string
+  finalMessage: string;
+  finalFrameLabel: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Ubah baris DB → tipe Memory yang dikonsumsi komponen. */
+export function memoryFromDb(row: MemoryDbRow): Memory {
+  let lineConfig: LineConfig[] = [];
+  try {
+    const parsed = JSON.parse(row.lineConfig);
+    if (Array.isArray(parsed)) lineConfig = parsed as LineConfig[];
+  } catch {
+    lineConfig = [];
+  }
+  return {
+    id: row.id,
+    code: row.code,
+    slug: row.slug,
+    name: row.name,
+    role: row.role,
+    theme: {
+      label: row.themeLabel,
+      accent: row.accent,
+      accentSoft: row.accentSoft,
+      background: row.background,
+      decoration: normalizeDecoration(row.decoration),
+    },
+    audioSrc: row.audioSrc,
+    songTitle: row.songTitle,
+    songArtist: row.songArtist,
+    enhancedLrc: row.enhancedLrc,
+    lineConfig,
+    finalMessage: row.finalMessage,
+    finalFrameLabel: row.finalFrameLabel,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function normalizeDecoration(d: string): DecorationKind {
+  return (DECORATION_KINDS as string[]).includes(d)
+    ? (d as DecorationKind)
+    : "bezier";
+}
