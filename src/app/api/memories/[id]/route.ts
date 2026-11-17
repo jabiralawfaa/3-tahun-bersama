@@ -65,14 +65,38 @@ export async function PUT(
   let slug = fstr(form, "slug").trim();
   slug = slug ? slugify(slug) : existing.slug;
   const name = fstr(form, "name").trim() || existing.name;
-  const enhancedLrc = fstr(form, "enhancedLrc") || existing.enhancedLrc;
+  const enhancedLrc = fstr(form, "enhancedLrc") ?? existing.enhancedLrc;
   const accent = fstr(form, "accent", existing.accent).trim();
   const accentSoft = fstr(form, "accentSoft", existing.accentSoft).trim();
   const background = fstr(form, "background", existing.background).trim();
 
-  if (!enhancedLrc.trim()) {
+  // Mode: "lrc" (enhancedLrc terisi) ATAU "plain" (plainLines terisi).
+  let plainLines: string[] = [];
+  const plainLinesRaw = fstr(form, "plainLines");
+  if (plainLinesRaw) {
+    try {
+      const parsed = JSON.parse(plainLinesRaw);
+      if (Array.isArray(parsed))
+        plainLines = parsed.filter((s) => typeof s === "string");
+    } catch {
+      /* biarkan kosong */
+    }
+  } else {
+    // Pertahankan plainLines yang ada jika tidak dikirim.
+    try {
+      const parsed = JSON.parse(existing.plainLines || "[]");
+      if (Array.isArray(parsed))
+        plainLines = parsed.filter((s) => typeof s === "string");
+    } catch {
+      plainLines = [];
+    }
+  }
+  const hasLrc = enhancedLrc.trim().length > 0;
+  const hasPlain = plainLines.length > 0;
+
+  if (!hasLrc && !hasPlain) {
     return NextResponse.json(
-      { error: "LRC wajib diisi" },
+      { error: "LRC atau tulisan per baris (plain) wajib diisi" },
       { status: 400 },
     );
   }
@@ -133,6 +157,7 @@ export async function PUT(
       songTitle: fstr(form, "songTitle", existing.songTitle),
       songArtist: fstr(form, "songArtist", existing.songArtist),
       enhancedLrc,
+      plainLines: JSON.stringify(plainLines),
       lineConfig: JSON.stringify(lineConfig),
       finalMessage: fstr(form, "finalMessage", existing.finalMessage),
       finalFrameLabel: fstr(form, "finalFrameLabel", existing.finalFrameLabel),

@@ -53,8 +53,11 @@ model Memory {
   audioSrc     String
   songTitle    String
   songArtist   String
-  /// String format Enhanced LRC
-  enhancedLrc  String
+  /// String format Enhanced LRC (mode "lrc"). Kosong jika mode "plain".
+  enhancedLrc  String   @default("")
+  /// JSON string[] — ucapan per baris (mode "plain", tanpa LRC).
+  /// Durasi lagu dibagi rata sesuai jumlah baris.
+  plainLines   String   @default("[]")
   /// JSON string LineConfig[] (refleksi + preset animasi per baris)
   lineConfig   String   @default("[]")
   /// Pesan penutup saat lagu selesai

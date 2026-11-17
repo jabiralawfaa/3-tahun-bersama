@@ -73,15 +73,28 @@ export async function POST(req: Request) {
   const accentSoft = fstr(form, "accentSoft", "#d96a4f").trim();
   const background = fstr(form, "background", "#13131f").trim();
 
+  // Mode: "lrc" (enhancedLrc terisi) ATAU "plain" (plainLines terisi).
+  // Salah satu wajib ada.
+  let plainLines: string[] = [];
+  try {
+    const parsed = JSON.parse(fstr(form, "plainLines", "[]"));
+    if (Array.isArray(parsed))
+      plainLines = parsed.filter((s) => typeof s === "string");
+  } catch {
+    plainLines = [];
+  }
+  const hasLrc = enhancedLrc.trim().length > 0;
+  const hasPlain = plainLines.length > 0;
+
   if (!code || !slug || !name) {
     return NextResponse.json(
       { error: "code, slug, dan name wajib diisi" },
       { status: 400 },
     );
   }
-  if (!enhancedLrc.trim()) {
+  if (!hasLrc && !hasPlain) {
     return NextResponse.json(
-      { error: "LRC wajib diisi (file lagu tanpa lirik tidak bisa diproses)" },
+      { error: "LRC atau tulisan per baris (plain) wajib diisi" },
       { status: 400 },
     );
   }
@@ -145,6 +158,7 @@ export async function POST(req: Request) {
       songTitle: fstr(form, "songTitle", name),
       songArtist: fstr(form, "songArtist", "Tidak diketahui"),
       enhancedLrc,
+      plainLines: JSON.stringify(plainLines),
       lineConfig: JSON.stringify(lineConfig),
       finalMessage: fstr(form, "finalMessage"),
       finalFrameLabel: fstr(form, "finalFrameLabel", "Final_Confession.tsx"),

@@ -11,7 +11,12 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Memory } from "@/data/memories";
-import { parseEnhancedLrc, findActiveLineIndex } from "@/lib/lrc";
+import { getMode } from "@/data/memories";
+import {
+  parseEnhancedLrc,
+  findActiveLineIndex,
+  buildPlainTimeline,
+} from "@/lib/lrc";
 import { useAuthStore } from "@/lib/auth-store";
 import { AnimatedBackground } from "./components/AnimatedBackground";
 import { KineticLyrics } from "./components/KineticLyrics";
@@ -61,17 +66,27 @@ export default function PersonalPage() {
   const [memory, setMemory] = useState<Memory | null>(null);
   const [loadingMemory, setLoadingMemory] = useState(true);
 
-  // Parse LRC sekali (memo). Aman walau memory belum tersedia.
-  const lines = useMemo(() => {
-    if (!memory) return [];
-    return parseEnhancedLrc(memory.enhancedLrc, memory.lineConfig);
-  }, [memory]);
-
   /* ------------------- Audio engine state ------------------- */
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  // Bangun timeline baris sesuai mode:
+  //  - "lrc": parse Enhanced LRC (timestamp per baris + per kata).
+  //  - "plain": bagi durasi lagu rata sesuai jumlah plainLines.
+  const lines = useMemo(() => {
+    if (!memory) return [];
+    if (getMode(memory) === "lrc") {
+      return parseEnhancedLrc(memory.enhancedLrc, memory.lineConfig);
+    }
+    // Plain mode — butuh duration; kosong sampai duration diketahui.
+    return buildPlainTimeline(
+      memory.plainLines ?? [],
+      duration,
+      memory.lineConfig,
+    );
+  }, [memory, duration]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [started, setStarted] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -357,13 +372,14 @@ export default function PersonalPage() {
           )}
         </AnimatePresence>
 
-        {/* Kinetic lyrics */}
+        {/* Kinetic lyrics / ucapan */}
         <div className="flex-1 flex flex-col justify-center">
           <KineticLyrics
             lines={lines}
             activeIndex={activeIndex}
             currentTime={currentTime}
             isEnding={fadeOut}
+            mode={getMode(memory)}
           />
         </div>
       </motion.div>

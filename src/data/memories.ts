@@ -59,9 +59,14 @@ export interface Memory {
   songTitle: string;
   /** Artis lagu */
   songArtist: string;
-  /** String format Enhanced LRC (timestamp per baris + per kata) */
+  /** String format Enhanced LRC (timestamp per baris + per kata).
+   *  Kosong jika entri memakai mode "plain" (ucapan biasa tanpa LRC). */
   enhancedLrc: string;
-  /** Pemetaan refleksi & preset animasi per baris (sejajar urutan LRC) */
+  /** Mode "plain": ucapan per baris yang ditampilkan dengan membagi
+   *  durasi lagu rata sesuai jumlah baris. Kosong/undefined jika mode "lrc". */
+  plainLines?: string[];
+  /** Pemetaan refleksi & preset animasi per baris (sejajar urutan LRC
+   *  atau urutan plainLines). */
   lineConfig: LineConfig[];
   /** Pesan penutup yang muncul saat lagu selesai */
   finalMessage: string;
@@ -311,6 +316,7 @@ export interface MemoryDbRow {
   songTitle: string;
   songArtist: string;
   enhancedLrc: string;
+  plainLines: string; // JSON string
   lineConfig: string; // JSON string
   finalMessage: string;
   finalFrameLabel: string;
@@ -326,6 +332,14 @@ export function memoryFromDb(row: MemoryDbRow): Memory {
     if (Array.isArray(parsed)) lineConfig = parsed as LineConfig[];
   } catch {
     lineConfig = [];
+  }
+  let plainLines: string[] = [];
+  try {
+    const parsed = JSON.parse(row.plainLines);
+    if (Array.isArray(parsed))
+      plainLines = parsed.filter((s) => typeof s === "string");
+  } catch {
+    plainLines = [];
   }
   return {
     id: row.id,
@@ -344,12 +358,21 @@ export function memoryFromDb(row: MemoryDbRow): Memory {
     songTitle: row.songTitle,
     songArtist: row.songArtist,
     enhancedLrc: row.enhancedLrc,
+    plainLines,
     lineConfig,
     finalMessage: row.finalMessage,
     finalFrameLabel: row.finalFrameLabel,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+/** Mode tampilan entri: "lrc" (lirik ter-sync) atau "plain" (ucapan biasa). */
+export type MemoryMode = "lrc" | "plain";
+
+/** Tentukan mode entri dari konten. */
+export function getMode(m: { enhancedLrc: string; plainLines?: string[] }): MemoryMode {
+  return m.enhancedLrc.trim() ? "lrc" : "plain";
 }
 
 function normalizeDecoration(d: string): DecorationKind {

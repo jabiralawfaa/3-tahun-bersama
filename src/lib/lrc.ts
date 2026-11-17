@@ -147,6 +147,38 @@ export function findActiveLineIndex(
 }
 
 /**
+ * Bangun timeline untuk mode "plain" (ucapan biasa tanpa LRC).
+ * Durasi lagu dibagi rata sesuai jumlah baris tulisan:
+ * baris ke-i mulai pada i*seg, selesai pada (i+1)*seg,
+ * di mana seg = duration / count.
+ *
+ * Setiap baris diperlakukan sebagai satu kesatuan (satu "kata" = seluruh
+ * teks baris), karena tidak ada timestamp per kata.
+ */
+export function buildPlainTimeline(
+  plainLines: string[],
+  duration: number,
+  lineConfig: { reflection?: string; animationPreset?: AnimationPreset }[] = [],
+): ParsedLrcLine[] {
+  const count = plainLines.length;
+  if (count === 0 || duration <= 0) return [];
+  const seg = duration / count;
+  return plainLines.map((text, i) => {
+    const cfg = lineConfig[i];
+    return {
+      index: i,
+      time: i * seg,
+      endTime: (i + 1) * seg,
+      text,
+      // Satu "kata" = seluruh teks baris (tidak ada highlight per kata).
+      words: [{ time: i * seg, text }],
+      animationPreset: cfg?.animationPreset ?? "blur-fade",
+      reflection: cfg?.reflection ?? "",
+    };
+  });
+}
+
+/**
  * Cari indeks kata aktif dalam sebuah baris pada waktu tertentu.
  * Mengembalikan -1 bila belum ada kata aktif.
  */
