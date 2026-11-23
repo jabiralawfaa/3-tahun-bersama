@@ -1,4 +1,6 @@
-export default function Loading() {
+"use client";
+
+export function Loading() {
   return (
     <main className="relative min-h-screen flex flex-col overflow-hidden bg-dot-grid">
       <div className="absolute inset-0 flex items-center justify-center">
