@@ -15,8 +15,10 @@ import { getMode } from "@/data/memories";
 import {
   parseEnhancedLrc,
   findActiveLineIndex,
+  findActiveWordIndex,
   buildPlainTimeline,
 } from "@/lib/lrc";
+import { usePerfMode, type PerfPref } from "@/lib/use-perf-mode";
 import { useAuthStore } from "@/lib/auth-store";
 import { AnimatedBackground } from "./components/AnimatedBackground";
 import { KineticLyrics } from "./components/KineticLyrics";
@@ -69,8 +71,14 @@ export default function PersonalPage() {
   /* ------------------- Audio engine state ------------------- */
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  // currentTime hanya untuk tampilan pemutar (diperbarui ±4x/detik).
+  // Baris & kata aktif disimpan sebagai state terpisah yang HANYA berubah
+  // saat baris/kata berganti — jadi halaman tidak re-render 60x/detik.
   const [currentTime, setCurrentTime] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [activeWord, setActiveWord] = useState(-1);
   const [duration, setDuration] = useState(0);
+  const { pref, setPref, low, autoLow, reportFrame } = usePerfMode();
 
   // Bangun timeline baris sesuai mode:
   //  - "lrc": parse Enhanced LRC (timestamp per baris + per kata).
@@ -92,10 +100,36 @@ export default function PersonalPage() {
   const [ended, setEnded] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
 
-  const activeIndex = useMemo(
-    () => findActiveLineIndex(lines, currentTime),
-    [lines, currentTime],
-  );
+  // Penyimpan terakhir agar setState hanya dipanggil saat nilai berubah.
+  const linesRef = useRef(lines);
+  const idxRef = useRef(-1);
+  const wordRef = useRef(-1);
+  const shownTimeRef = useRef(-1);
+
+  const syncTime = useCallback((t: number) => {
+    const ls = linesRef.current;
+    const idx = findActiveLineIndex(ls, t);
+    const w = idx >= 0 ? findActiveWordIndex(ls[idx], t) : -1;
+    if (idx !== idxRef.current) {
+      idxRef.current = idx;
+      setActiveIndex(idx);
+    }
+    if (w !== wordRef.current) {
+      wordRef.current = w;
+      setActiveWord(w);
+    }
+    if (Math.abs(t - shownTimeRef.current) >= 0.25) {
+      shownTimeRef.current = t;
+      setCurrentTime(t);
+    }
+  }, []);
+
+  // Timeline berubah (mode plain baru tahu durasi) → hitung ulang baris aktif.
+  useEffect(() => {
+    linesRef.current = lines;
+    const a = audioRef.current;
+    syncTime(a ? a.currentTime : 0);
+  }, [lines, syncTime]);
 
   /* ------------------- Route guard + fetch memory ------------------- */
   // Tunggu sinyal mount client sebelum mengambil keputusan redirect,
@@ -134,15 +168,25 @@ export default function PersonalPage() {
   }, [hasHydrated, slug, isUnlocked, router]);
 
   /* ------------------- Sinkronisasi waktu presisi (rAF) ------------------- */
-  // Loop rAF berjalan terus selama komponen ter-mount dan hanya menulis
-  // currentTime saat audio benar-benar diputar. Decoupled dari state
-  // isPlaying agar sinkronisasi tetap presisi meski ada perbedaan state.
+  // Loop rAF membaca audio.currentTime tiap frame (presisi), tetapi hanya
+  // memanggil setState saat baris/kata aktif berganti. Frame yang sama
+  // dipakai untuk mengukur FPS (mode ringan otomatis).
+  const reportFrameRef = useRef(reportFrame);
+  useEffect(() => {
+    reportFrameRef.current = reportFrame;
+  }, [reportFrame]);
+
   useEffect(() => {
     let rafId = 0;
-    const loop = () => {
+    let last = 0;
+    const loop = (now: number) => {
       const audio = audioRef.current;
       if (audio && !audio.paused) {
-        setCurrentTime(audio.currentTime);
+        syncTime(audio.currentTime);
+        if (last) reportFrameRef.current(now - last);
+        last = now;
+      } else {
+        last = 0;
       }
       rafId = requestAnimationFrame(loop);
     };
@@ -152,7 +196,7 @@ export default function PersonalPage() {
       cancelAnimationFrame(rafId);
       rafRef.current = null;
     };
-  }, []);
+  }, [syncTime]);
 
   /* ------------------- Pelacakan duration yang andal ------------------- */
   // Beberapa mp3 memuat duration secara bertahap; gunakan beberapa event.
@@ -208,15 +252,15 @@ export default function PersonalPage() {
     if (!audio) return;
     setEnded(false);
     setFadeOut(false);
-    setCurrentTime(0);
     audio.currentTime = 0;
+    syncTime(0);
     void audio
       .play()
       .then(() => setStarted(true))
       .catch(() => {
         // noop
       });
-  }, []);
+  }, [syncTime]);
 
   /* ------------------- Auto-play setelah navigasi ------------------- */
   // Saat masuk dari gerbang (gesture klik sudah terjadi), coba autoplay.
@@ -287,6 +331,7 @@ export default function PersonalPage() {
     <main
       className="relative min-h-screen flex flex-col overflow-hidden"
       style={themeVars}
+      data-perf={low ? "low" : "high"}
     >
       {/* Audio element (tersembunyi) */}
       <audio
@@ -298,8 +343,8 @@ export default function PersonalPage() {
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onTimeUpdate={(e) => {
-          // Cadangan presisi menengah (rAF tetap andal sebagai utama).
-          setCurrentTime(e.currentTarget.currentTime);
+          // Cadangan + saat seek ketika audio dijeda (rAF hanya jalan saat main).
+          syncTime(e.currentTarget.currentTime);
         }}
         onEnded={handleEnded}
       />
@@ -307,7 +352,7 @@ export default function PersonalPage() {
       {/* Latar dekoratif beranimasi */}
       <AnimatedBackground
         decoration={memory.theme.decoration}
-        activeBait={Math.max(0, activeIndex)}
+        activeBait={Math.max(0, activeIndex) % 3}
       />
 
       {/* Header bar ala editor */}
@@ -324,19 +369,21 @@ export default function PersonalPage() {
             {memory.theme.label}
           </span>
         </div>
-        <div className="hidden sm:flex items-center gap-3 opacity-70">
-          <span>{memory.role}</span>
+        <div className="flex items-center gap-3">
+          <PerfToggle pref={pref} low={low} autoLow={autoLow} onChange={setPref} />
+          <span className="hidden sm:inline opacity-70">{memory.role}</span>
         </div>
       </motion.header>
 
       {/* Lapisan utama yang memudar saat ending */}
-      <motion.div
+      <div
         className="relative z-10 flex flex-1 flex-col"
-        animate={{
+        style={{
           opacity: fadeOut ? 0 : 1,
-          filter: fadeOut ? "blur(8px)" : "blur(0px)",
+          // filter hanya dipasang saat memudar (blur permanen = lapisan mahal)
+          filter: fadeOut && !low ? "blur(8px)" : "none",
+          transition: "opacity 1.1s cubic-bezier(.22,1,.36,1), filter 1.1s cubic-bezier(.22,1,.36,1)",
         }}
-        transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
       >
         {/* Prompt mulai (sebelum audio diputar pertama kali) */}
         <AnimatePresence>
@@ -377,12 +424,14 @@ export default function PersonalPage() {
           <KineticLyrics
             lines={lines}
             activeIndex={activeIndex}
-            currentTime={currentTime}
+            activeWord={activeWord}
             isEnding={fadeOut}
             mode={getMode(memory)}
+            icons={memory.svgIcons}
+            iconLayout={memory.iconLayout}
           />
         </div>
-      </motion.div>
+      </div>
 
       {/* Audio player glassmorphic */}
       <AudioPlayer
@@ -419,5 +468,47 @@ export default function PersonalPage() {
         </div>
       </motion.footer>
     </main>
+  );
+}
+
+/* ------------------------------------------------------------------
+ * PerfToggle — pilih kualitas animasi (otomatis / ringan / penuh)
+ * ------------------------------------------------------------------ */
+const PERF_ORDER: PerfPref[] = ["auto", "low", "high"];
+const PERF_LABEL: Record<PerfPref, string> = {
+  auto: "otomatis",
+  low: "ringan",
+  high: "penuh",
+};
+
+function PerfToggle({
+  pref,
+  low,
+  autoLow,
+  onChange,
+}: {
+  pref: PerfPref;
+  low: boolean;
+  autoLow: boolean;
+  onChange: (p: PerfPref) => void;
+}) {
+  const next = PERF_ORDER[(PERF_ORDER.indexOf(pref) + 1) % PERF_ORDER.length];
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(next)}
+      title={`Kualitas animasi: ${PERF_LABEL[pref]}${
+        pref === "auto" && autoLow ? " (beralih ke ringan karena perangkat lambat)" : ""
+      }. Klik untuk ganti ke "${PERF_LABEL[next]}".`}
+      className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] tracking-[0.15em] text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
+    >
+      <span
+        className={`inline-block h-1.5 w-1.5 rounded-full ${
+          low ? "bg-muted-foreground/60" : "bg-amber-warm/80"
+        }`}
+      />
+      <span>anim: {PERF_LABEL[pref]}</span>
+      {pref === "auto" && low && <span className="opacity-60">· ringan</span>}
+    </button>
   );
 }

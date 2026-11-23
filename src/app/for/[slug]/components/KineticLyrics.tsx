@@ -1,59 +1,131 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import { useMemo } from "react";
 import {
-  findActiveWordIndex,
-  formatTime,
-  type ParsedLrcLine,
-} from "@/lib/lrc";
-import type { AnimationPreset, MemoryMode } from "@/data/memories";
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+} from "react";
+import { formatTime, type ParsedLrcLine } from "@/lib/lrc";
+import type {
+  AnimationPreset,
+  IconLayout,
+  MemoryMode,
+} from "@/data/memories";
+import { ICON_NONE, resolveLineIcon, type SvgIcon } from "@/lib/svg";
+import { AnimatedSvgIcon } from "@/components/svg-icon/AnimatedSvgIcon";
 
 /**
- * KineticLyrics
+ * KineticLyrics (versi ringan)
  * ------------------------------------------------------------------
- * Mesin kinetic typography multi-efek.
+ * Tampilan sama (3D flip / zoom in / zoom out / blur-fade, kata masuk
+ * bergiliran, gerak natural, ikon SVG), tetapi dibangun ulang agar
+ * murah untuk PC/laptop lama:
  *
- * - Menampilkan baris lirik aktif dengan transisi yang bervariasi
- *   antar baris sesuai `animationPreset` (3d-flip / zoom-in /
- *   zoom-out / blur-fade).
- * - Sinkronisasi per kata: kata yang sedang dinyanyikan menyala
- *   terang, terangkat, berubah warna aksen.
- * - Lapisan subteks: di bawah baris aktif, tampilkan refleksi
- *   pribadi 3 tahun dalam tipografi editorial serif italic.
- * - Bingkai selection-frame ala Figma di sekeliling baris aktif.
- * ------------------------------------------------------------------
- */
+ *  - Semua gerak memakai CSS (transform/opacity) → jalan di GPU
+ *    compositor, tanpa animasi JavaScript per frame. Gaya ada di
+ *    globals.css (kelas .kl-*, .kw, .kword).
+ *  - Komponen hanya re-render saat baris / kata aktif berganti (bukan
+ *    60x per detik): waktu tidak lagi dipasok sebagai prop.
+ *  - Tanpa AnimatePresence: hanya ada 1 layer aktif + maksimal 1 layer
+ *    yang sedang keluar (±0,35 dtk) di sel grid yang sama. Baris
+ *    sebelumnya, label baris, dan refleksi tidak akan menumpuk walau
+ *    lagu berpindah baris sangat cepat atau perangkat lag.
+ *  - Tata letak ikon: grid 2 kolom (ikon separuh, teks separuh),
+ *    bergantian kiri/kanan tiap baris.
+ *  - Mode tanpa LRC (ucapan biasa): ikon tampil "ramai" (3–5 ikon kecil
+ *    mengisi ruang kosong di sekitar ucapan) atau "individual" (satu ikon
+ *    besar di atas ucapan). Teks tetap di tengah.
+ *  - Mode ringan (data-perf="low" di <main>) mematikan gerak idle,
+ *    blur, dan condong 3D — lihat globals.css.
+ * ------------------------------------------------------------------ */
 interface KineticLyricsProps {
   lines: ParsedLrcLine[];
   activeIndex: number;
-  currentTime: number;
+  /** Indeks kata aktif di baris aktif (mode LRC); -1 bila tidak ada. */
+  activeWord: number;
   isEnding: boolean;
   /** Mode tampilan: "lrc" (lirik + highlight per kata) atau "plain" (ucapan hero). */
   mode?: MemoryMode;
+  /** Pustaka ikon SVG milik arsip ini. Kosong = tanpa ikon. */
+  icons?: SvgIcon[];
+  /** Tata letak ikon pada mode ucapan biasa: ramai / individual. */
+  iconLayout?: IconLayout;
 }
 
-export function KineticLyrics({
+/** Ikon mengisi separuh kolomnya, dibatasi agar tidak melebihi tinggi layar. */
+const ICON_SIZE = "min(100%, 14rem, 34vh)";
+/** Lama animasi keluar (harus ≥ durasi .kl-layer[data-phase=leave] di CSS). */
+const LEAVE_MS = 380;
+
+type Side = "left" | "right";
+
+export const KineticLyrics = memo(function KineticLyrics({
   lines,
   activeIndex,
-  currentTime,
+  activeWord,
   isEnding,
   mode = "lrc",
+  icons = [],
+  iconLayout = "crowd",
 }: KineticLyricsProps) {
   const activeLine = activeIndex >= 0 ? lines[activeIndex] : undefined;
-  const nextLine =
-    activeIndex >= 0 && activeIndex + 1 < lines.length
-      ? lines[activeIndex + 1]
-      : undefined;
-  const prevLine = activeIndex > 0 ? lines[activeIndex - 1] : undefined;
 
-  // Ambil preset untuk baris aktif
+  /* --- Maksimal SATU layer yang sedang keluar --- */
+  const [leavingIndex, setLeavingIndex] = useState<number | null>(null);
+  const prevIndexRef = useRef(activeIndex);
+  useEffect(() => {
+    const prev = prevIndexRef.current;
+    prevIndexRef.current = activeIndex;
+    if (prev < 0 || prev === activeIndex) return;
+    setLeavingIndex(prev);
+    const t = setTimeout(() => setLeavingIndex(null), LEAVE_MS);
+    return () => clearTimeout(t);
+  }, [activeIndex]);
+  const leavingLine =
+    leavingIndex !== null && leavingIndex !== activeIndex
+      ? lines[leavingIndex]
+      : undefined;
+
+  /* --- Condong 3D halus mengikuti mouse (CSS variable, tanpa re-render) --- */
+  const tiltRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+  const handleMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "mouse" || rafRef.current) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    const nx = (e.clientX - r.left) / r.width - 0.5;
+    const ny = (e.clientY - r.top) / r.height - 0.5;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      const el = tiltRef.current;
+      if (!el) return;
+      el.style.setProperty("--kl-ry", `${(nx * 16).toFixed(2)}deg`);
+      el.style.setProperty("--kl-rx", `${(-ny * 12).toFixed(2)}deg`);
+    });
+  };
+  const handleLeave = () => {
+    const el = tiltRef.current;
+    if (!el) return;
+    el.style.setProperty("--kl-ry", "0deg");
+    el.style.setProperty("--kl-rx", "0deg");
+  };
+
   const preset = activeLine?.animationPreset ?? "blur-fade";
+  const activeIcon = activeLine
+    ? resolveLineIcon(activeLine.index, activeLine.iconId, icons)
+    : null;
 
   return (
     <div
       className="relative z-10 flex min-h-[58vh] flex-col items-center justify-center px-5 sm:px-8"
       aria-live="polite"
+      onPointerMove={handleMove}
+      onPointerLeave={handleLeave}
     >
       {/* Label monospace kecil — alat bantu desainer */}
       <div className="mb-6 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground/60">
@@ -61,369 +133,446 @@ export function KineticLyrics({
         <span>{mode === "plain" ? "spoken" : "kinetic-lyrics"}</span>
         <span className="opacity-40">·</span>
         <span className="text-amber-warm/70">{preset}</span>
+        {activeIcon && (
+          <>
+            <span className="opacity-40">·</span>
+            <span className="text-amber-warm/70">
+              {activeIcon.mode === "fill" ? "icon:fill" : "icon:neon"}
+            </span>
+          </>
+        )}
       </div>
 
-      <AnimatePresence mode="popLayout">
-        {!isEnding && activeLine && (
-          <motion.div
-            key={`line-${activeLine.index}`}
-            className="flex w-full max-w-4xl flex-col items-center"
-          >
-            {/* Baris sebelumnya (preview redup di atas) */}
-            {prevLine && (
-              <PreviewLine text={prevLine.text} side="prev" />
-            )}
-
-            {/* Baris aktif dengan selection frame + animasi preset */}
-            <div className="selection-frame relative my-3 px-6 py-4">
-              {mode === "plain" ? (
-                <PlainHeroLine line={activeLine} preset={preset} />
-              ) : (
-                <PresetLine
-                  line={activeLine}
-                  currentTime={currentTime}
-                  preset={preset}
-                />
+      <div ref={tiltRef} className="kl-tilt w-full">
+        <div className={`kl-stage ${mode === "plain" ? "kl-stage--plain" : ""}`}>
+          {/* Urutan DOM tetap: [keluar][aktif] → instance tidak di-remount */}
+          {leavingLine && (
+            <Layer
+              key={leavingLine.index}
+              line={leavingLine}
+              total={lines.length}
+              phase="leave"
+              activeWord={-2}
+              mode={mode}
+              layout={iconLayout}
+              icons={icons}
+              icon={resolveLineIcon(
+                leavingLine.index,
+                leavingLine.iconId,
+                icons,
               )}
-              {/* Label waktu + indeks di sudut frame (ala editor) */}
-              <div className="absolute -top-5 left-0 font-mono text-[10px] uppercase tracking-[0.2em] text-amber-warm/60">
-                {mode === "plain" ? "spoken_" : "line_"}
-                {String(activeLine.index + 1).padStart(2, "0")} ·{" "}
-                {formatTime(activeLine.time)}
-              </div>
-              <div className="absolute -bottom-5 right-0 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/50">
-                {mode === "plain"
-                  ? `${lines.length} lines`
-                  : `${activeLine.words.length} words`}
-              </div>
-            </div>
+              prevText={lines[leavingLine.index - 1]?.text}
+              nextText={lines[leavingLine.index + 1]?.text}
+            />
+          )}
+          {activeLine && (
+            <Layer
+              key={activeLine.index}
+              line={activeLine}
+              total={lines.length}
+              phase={isEnding ? "leave" : "enter"}
+              activeWord={isEnding ? -2 : activeWord}
+              mode={mode}
+              layout={iconLayout}
+              icons={icons}
+              icon={activeIcon}
+              prevText={lines[activeLine.index - 1]?.text}
+              nextText={lines[activeLine.index + 1]?.text}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
 
-            {/* Subteks refleksi — editorial serif italic.
-                Hanya di mode LRC. Mode plain: ucapan sudah jadi hero utama. */}
-            {mode === "lrc" && (
-              <AnimatePresence mode="wait">
-                <motion.p
-                  key={`ref-${activeLine.index}`}
-                  className="mt-8 max-w-xl text-center font-serif italic text-base sm:text-lg leading-relaxed text-foreground/70"
-                  initial={{
-                    opacity: 0,
-                    y: 12,
-                    filter: "blur(8px)",
-                  }}
-                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                  exit={{
-                    opacity: 0,
-                    y: -10,
-                    filter: "blur(8px)",
-                  }}
-                  transition={{
-                    duration: 0.9,
-                    ease: [0.22, 1, 0.36, 1],
-                    delay: 0.25,
-                  }}
-                >
-                  <span className="mr-1 text-amber-warm/50">“</span>
-                  {activeLine.reflection}
-                  <span className="ml-1 text-amber-warm/50">”</span>
-                </motion.p>
-              </AnimatePresence>
-            )}
+/* ----------------------------------------------------------------
+ * Layer — satu baris lengkap: preview atas, [ikon | teks], refleksi,
+ * preview bawah. Di-memo: layer yang tidak berubah tidak dirender ulang.
+ * ---------------------------------------------------------------- */
+interface LayerProps {
+  line: ParsedLrcLine;
+  total: number;
+  phase: "enter" | "leave";
+  /** Kata aktif; -2 = tidak ada sorotan (layer sedang keluar). */
+  activeWord: number;
+  mode: MemoryMode;
+  layout: IconLayout;
+  /** Seluruh pustaka ikon (dipakai tata letak "ramai"). */
+  icons: SvgIcon[];
+  icon: SvgIcon | null;
+  prevText?: string;
+  nextText?: string;
+}
 
-            {/* Baris berikutnya (preview redup di bawah) */}
-            {nextLine && <PreviewLine text={nextLine.text} side="next" />}
-          </motion.div>
+const Layer = memo(function Layer({
+  line,
+  total,
+  phase,
+  activeWord,
+  mode,
+  layout,
+  icons,
+  icon,
+  prevText,
+  nextText,
+}: LayerProps) {
+  const preset: AnimationPreset = line.animationPreset;
+  // Genap = ikon di kiri, ganjil = ikon di kanan (bergantian).
+  const side: Side = line.index % 2 === 1 ? "right" : "left";
+  const hasIcon = !!icon;
+  // Durasi "kamera" = durasi baris, dibatasi agar gerak tetap terasa.
+  const driftSeconds = Math.min(Math.max(line.endTime - line.time, 2.5), 14);
+
+  if (mode === "plain") {
+    return (
+      <PlainLayer
+        line={line}
+        total={total}
+        phase={phase}
+        layout={layout}
+        icons={icons}
+        icon={icon}
+        side={side}
+        driftSeconds={driftSeconds}
+      />
+    );
+  }
+
+  const textSize =
+    mode === "plain"
+      ? hasIcon
+        ? "text-3xl sm:text-5xl lg:text-6xl leading-[1.15]"
+        : "text-4xl sm:text-6xl md:text-7xl leading-[1.15]"
+      : hasIcon
+        ? "text-2xl sm:text-4xl lg:text-5xl leading-tight"
+        : "text-3xl sm:text-5xl md:text-6xl leading-tight";
+
+  return (
+    <div
+      className="kl-layer"
+      data-phase={phase}
+      data-preset={preset}
+      data-side={side}
+    >
+      {/* Baris sebelumnya (preview redup di atas) */}
+      {prevText && (
+        <p className="kl-preview mb-6 max-w-2xl text-center text-sm text-muted-foreground/50 sm:text-base">
+          {prevText}
+        </p>
+      )}
+
+      {/* Grid 2 kolom: ikon separuh, teks separuh — bergantian kiri/kanan */}
+      <div
+        className={`kl-row ${
+          hasIcon
+            ? `kl-row--icon ${side === "right" ? "kl-row--icon-right" : ""}`
+            : ""
+        }`}
+      >
+        {icon && (
+          <div className="kl-icon-cell">
+            <AnimatedSvgIcon
+              icon={icon}
+              side={side}
+              size={ICON_SIZE}
+              phase={phase === "enter" ? "in" : "out"}
+            />
+          </div>
         )}
-      </AnimatePresence>
+
+        <div className="kl-text-cell">
+          <TextFrame
+            line={line}
+            total={total}
+            mode={mode}
+            activeWord={activeWord}
+            preset={preset}
+            driftSeconds={driftSeconds}
+            textSize={textSize}
+          />
+        </div>
+      </div>
+
+      {/* Subteks refleksi — hanya mode LRC */}
+      {mode === "lrc" && line.reflection && (
+        <p className="kl-ref mt-10 max-w-xl text-center font-serif text-base italic leading-relaxed text-foreground/70 sm:text-lg">
+          <span className="mr-1 text-amber-warm/50">“</span>
+          {line.reflection}
+          <span className="ml-1 text-amber-warm/50">”</span>
+        </p>
+      )}
+
+      {/* Baris berikutnya (preview redup di bawah) */}
+      {nextText && (
+        <p className="kl-preview mt-6 max-w-2xl text-center text-sm text-muted-foreground/50 sm:text-base">
+          {nextText}
+        </p>
+      )}
+    </div>
+  );
+});
+
+/* ---------- Mode LRC: highlight per kata ---------- */
+function LrcWords({
+  line,
+  activeWord,
+}: {
+  line: ParsedLrcLine;
+  activeWord: number;
+}) {
+  return (
+    <>
+      {line.words.map((w, i) => (
+        <span key={i} className="kw" style={{ "--wi": i } as CSSProperties}>
+          <span
+            className={`kword ${i === activeWord ? "is-active" : ""}`}
+            style={{ "--wi": i } as CSSProperties}
+          >
+            {w.text}
+          </span>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/* ---------- Mode plain: ucapan hero ---------- */
+function PlainWords({ text }: { text: string }) {
+  const tokens = useMemo(() => {
+    const parts = text.split(" ");
+    return parts.map((t, i) => (i < parts.length - 1 ? `${t} ` : t));
+  }, [text]);
+  return (
+    <>
+      {tokens.map((t, i) => (
+        <span key={i} className="kw" style={{ "--wi": i } as CSSProperties}>
+          <span
+            className="kword is-plain"
+            style={{ "--wi": i } as CSSProperties}
+          >
+            {t}
+          </span>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/* ----------------------------------------------------------------
+ * Mode tanpa LRC (ucapan biasa)
+ *  - "single": satu ikon besar di atas ucapan; ucapan ikut turun sedikit.
+ *  - "crowd" : 3–5 ikon kecil di sekeliling ucapan (ruang kosong).
+ * Teks selalu di tengah secara horizontal.
+ * ---------------------------------------------------------------- */
+
+/** Slot di sekeliling area teks (persen dari panggung). `mid` = sisi
+ *  tengah yang bisa menabrak teks di layar sempit → disembunyikan di HP. */
+const CROWD_SLOTS: { x: number; y: number; mid?: boolean }[] = [
+  { x: 7, y: 15 },
+  { x: 93, y: 13 },
+  { x: 4, y: 50, mid: true },
+  { x: 96, y: 52, mid: true },
+  { x: 10, y: 85 },
+  { x: 90, y: 87 },
+  { x: 30, y: 6 },
+  { x: 70, y: 7 },
+  { x: 29, y: 94 },
+  { x: 71, y: 93 },
+];
+
+interface CrowdItem {
+  icon: SvgIcon;
+  x: number;
+  y: number;
+  mid: boolean;
+  scale: number;
+  rot: number;
+  side: Side;
+  delay: number;
+}
+
+/** Pilih 3–5 ikon + slotnya secara deterministik per baris. */
+function pickCrowd(
+  index: number,
+  icons: SvgIcon[],
+  forced: SvgIcon[],
+): CrowdItem[] {
+  if (!icons.length) return [];
+  // Pilihan manual: pakai ikon pilihan (diulang bila < 3), selebihnya otomatis.
+  const count = forced.length
+    ? Math.min(5, Math.max(3, forced.length))
+    : 3 + (index % 3);
+  const start = (index * 3) % CROWD_SLOTS.length;
+  const items: CrowdItem[] = [];
+  for (let k = 0; k < count; k++) {
+    const slot = CROWD_SLOTS[(start + k * 3) % CROWD_SLOTS.length];
+    items.push({
+      icon: forced.length
+        ? forced[k % forced.length]
+        : icons[(index + k) % icons.length],
+      x: slot.x,
+      y: slot.y,
+      mid: !!slot.mid,
+      scale: 0.8 + ((index + k * 5) % 5) * 0.1,
+      rot: (((index + k * 7) % 9) - 4) * 6,
+      side: slot.x < 50 ? "left" : "right",
+      delay: 150 + k * 140,
+    });
+  }
+  return items;
+}
+
+function PlainLayer({
+  line,
+  total,
+  phase,
+  layout,
+  icons,
+  icon,
+  side,
+  driftSeconds,
+}: {
+  line: ParsedLrcLine;
+  total: number;
+  phase: "enter" | "leave";
+  layout: IconLayout;
+  icons: SvgIcon[];
+  icon: SvgIcon | null;
+  side: Side;
+  driftSeconds: number;
+}) {
+  const preset = line.animationPreset;
+  const iconPhase = phase === "enter" ? "in" : "out";
+  const none = line.iconId === ICON_NONE;
+  const single = layout === "single" && !!icon;
+
+  const crowd = useMemo(
+    () =>
+      layout === "crowd" && !none
+        ? pickCrowd(
+            line.index,
+            icons,
+            (line.iconIds?.length ? line.iconIds : line.iconId ? [line.iconId] : [])
+              .map((id) => icons.find((i) => i.id === id))
+              .filter((i): i is SvgIcon => !!i),
+          )
+        : [],
+    [layout, none, line.index, line.iconId, line.iconIds, icons],
+  );
+
+  const textSize = single
+    ? "text-3xl sm:text-5xl md:text-6xl leading-[1.15]"
+    : "text-4xl sm:text-6xl md:text-7xl leading-[1.15]";
+
+  return (
+    <div
+      className={`kl-layer kl-layer--plain ${single ? "kl-layer--single" : ""}`}
+      data-phase={phase}
+      data-preset={preset}
+      data-side={side}
+    >
+      {/* Ramai: ikon kecil di sekeliling teks */}
+      {crowd.length > 0 && (
+        <div className="kl-crowd" aria-hidden="true">
+          {crowd.map((c, k) => (
+            <div
+              key={k}
+              className={`kl-crowd-item ${c.mid ? "kl-crowd-item--mid" : ""}`}
+              style={
+                {
+                  left: `${c.x}%`,
+                  top: `${c.y}%`,
+                  "--cs": c.scale,
+                  "--cr": `${c.rot}deg`,
+                } as CSSProperties
+              }
+            >
+              <AnimatedSvgIcon
+                icon={c.icon}
+                side={c.side}
+                size="100%"
+                phase={iconPhase}
+                delay={c.delay}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Individual: satu ikon lebih besar di atas ucapan */}
+      {single && icon && (
+        <div className="kl-single-icon">
+          <AnimatedSvgIcon
+            icon={icon}
+            side={side}
+            size="min(46vw, 11.5rem, 27vh)"
+            phase={iconPhase}
+          />
+        </div>
+      )}
+
+      <TextFrame
+        line={line}
+        total={total}
+        mode="plain"
+        activeWord={-2}
+        preset={preset}
+        driftSeconds={driftSeconds}
+        textSize={textSize}
+      />
     </div>
   );
 }
 
 /* ----------------------------------------------------------------
- * PreviewLine — baris tetangga yang tampil redup
+ * TextFrame — frame teks (selection-frame + kamera + napas + kata)
  * ---------------------------------------------------------------- */
-function PreviewLine({ text, side }: { text: string; side: "prev" | "next" }) {
-  return (
-    <motion.p
-      className={`max-w-2xl text-center text-sm sm:text-base text-muted-foreground/50 ${
-        side === "prev" ? "mb-2" : "mt-2"
-      }`}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.5 }}
-    >
-      {text}
-    </motion.p>
-  );
-}
-
-/* ----------------------------------------------------------------
- * PlainHeroLine — mode "plain": ucapan biasa sebagai hero utama.
- * Tidak ada highlight per kata. Seluruh teks tampil besar dalam warna
- * aksen dengan glow lembut yang "bernapas" — menonjolkan ucapan.
- * Animasi entrance/exit mengikuti preset baris.
- * ---------------------------------------------------------------- */
-function PlainHeroLine({
+function TextFrame({
   line,
+  total,
+  mode,
+  activeWord,
   preset,
+  driftSeconds,
+  textSize,
 }: {
   line: ParsedLrcLine;
+  total: number;
+  mode: MemoryMode;
+  activeWord: number;
   preset: AnimationPreset;
+  driftSeconds: number;
+  textSize: string;
 }) {
-  const spring = { type: "spring" as const, stiffness: 130, damping: 18, mass: 0.9 };
-  const ease = { duration: 0.9, ease: [0.22, 1, 0.36, 1] as const };
-  const common =
-    "text-center font-sans text-4xl sm:text-6xl md:text-7xl font-semibold leading-[1.15] tracking-tight";
-
-  let motionProps: {
-    initial: Record<string, number | string>;
-    animate: Record<string, number | string>;
-    exit: Record<string, number | string>;
-    transition: typeof spring | typeof ease;
-    style?: React.CSSProperties;
-  };
-
-  switch (preset) {
-    case "3d-flip":
-      motionProps = {
-        initial: { rotateX: 80, rotateY: -18, opacity: 0 },
-        animate: { rotateX: 0, rotateY: 0, opacity: 1 },
-        exit: { rotateX: -70, rotateY: 16, opacity: 0 },
-        transition: spring,
-        style: { perspective: 1000 },
-      };
-      break;
-    case "zoom-in":
-      motionProps = {
-        initial: { scale: 0.7, opacity: 0 },
-        animate: { scale: 1, opacity: 1 },
-        exit: { scale: 1.18, opacity: 0 },
-        transition: spring,
-      };
-      break;
-    case "zoom-out":
-      motionProps = {
-        initial: { scale: 1.18, opacity: 0 },
-        animate: { scale: 1, opacity: 1 },
-        exit: { scale: 0.78, opacity: 0, filter: "blur(6px)" },
-        transition: spring,
-      };
-      break;
-    case "blur-fade":
-    default:
-      motionProps = {
-        initial: { y: 24, opacity: 0, filter: "blur(12px)" },
-        animate: { y: 0, opacity: 1, filter: "blur(0px)" },
-        exit: { y: -24, opacity: 0, filter: "blur(12px)" },
-        transition: ease,
-      };
-      break;
-  }
-
   return (
-    <motion.div
-      className={common}
-      initial={motionProps.initial}
-      animate={motionProps.animate}
-      exit={motionProps.exit}
-      transition={motionProps.transition}
-      style={motionProps.style}
-    >
-      {/* Glow bernapas — memberi "nyawa" karena tidak ada highlight per kata */}
-      <motion.span
-        className="inline-block"
-        style={{
-          color: "var(--amber-warm)",
-        }}
-        animate={{
-          textShadow: [
-            "0 0 24px color-mix(in srgb, var(--amber-warm) 30%, transparent)",
-            "0 0 40px color-mix(in srgb, var(--amber-warm) 55%, transparent)",
-            "0 0 24px color-mix(in srgb, var(--amber-warm) 30%, transparent)",
-          ],
-        }}
-        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+    <div className="selection-frame relative mx-auto my-3 inline-block max-w-full px-4 py-4 sm:px-6">
+      <div
+        className={`kl-anim text-center font-sans font-semibold tracking-tight ${textSize}`}
       >
-        {line.text}
-      </motion.span>
-    </motion.div>
+        <div
+          className="kl-drift"
+          data-preset={preset}
+          style={{ "--kl-dur": `${driftSeconds}s` } as CSSProperties}
+        >
+          <div className="kl-idle">
+            {mode === "plain" ? (
+              <PlainWords text={line.text} />
+            ) : (
+              <LrcWords line={line} activeWord={activeWord} />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Label waktu + indeks di sudut frame (ala editor) */}
+      <div className="kl-label absolute -top-5 left-0 font-mono text-[10px] uppercase tracking-[0.2em] text-amber-warm/60">
+        {mode === "plain" ? "spoken_" : "line_"}
+        {String(line.index + 1).padStart(2, "0")} · {formatTime(line.time)}
+      </div>
+      <div className="kl-label absolute -bottom-5 right-0 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/50">
+        {mode === "plain" ? `${total} lines` : `${line.words.length} words`}
+      </div>
+    </div>
   );
-}
-
-/* ----------------------------------------------------------------
- * PresetLine — menerapkan animasi sesuai preset
- * ---------------------------------------------------------------- */
-function PresetLine({
-  line,
-  currentTime,
-  preset,
-}: {
-  line: ParsedLrcLine;
-  currentTime: number;
-  preset: AnimationPreset;
-}) {
-  switch (preset) {
-    case "3d-flip":
-      return <FlipLine line={line} currentTime={currentTime} />;
-    case "zoom-in":
-      return <ZoomInLine line={line} currentTime={currentTime} />;
-    case "zoom-out":
-      return <ZoomOutLine line={line} currentTime={currentTime} />;
-    case "blur-fade":
-    default:
-      return <BlurFadeLine line={line} currentTime={currentTime} />;
-  }
-}
-
-/* ---------- Kata dasar dengan highlight sinkron ---------- */
-function Word({
-  text,
-  active,
-  accentActive,
-}: {
-  text: string;
-  active: boolean;
-  accentActive?: boolean;
-}) {
-  return (
-    <motion.span
-      className="inline-block whitespace-pre"
-      animate={{
-        y: active ? -2 : 0,
-        color: active
-          ? "var(--amber-warm)"
-          : "oklch(0.86 0.01 270 / 0.55)",
-        textShadow: active
-          ? "0 0 18px color-mix(in srgb, var(--amber-warm) 45%, transparent)"
-          : "0 0 0px rgba(0,0,0,0)",
-      }}
-      transition={{
-        type: "spring",
-        stiffness: 320,
-        damping: 22,
-        mass: 0.6,
-      }}
-      style={accentActive ? { color: "var(--amber-warm)" } : undefined}
-    >
-      {text}
-    </motion.span>
-  );
-}
-
-function renderWords(
-  line: ParsedLrcLine,
-  currentTime: number,
-): React.ReactNode {
-  const activeWord = findActiveWordIndex(line, currentTime);
-  return line.words.map((w, i) => (
-    <Word key={i} text={w.text} active={i === activeWord} />
-  ));
-}
-
-/* ---------- 3D Perspective Flip / Tilt ---------- */
-function FlipLine({
-  line,
-  currentTime,
-}: {
-  line: ParsedLrcLine;
-  currentTime: number;
-}) {
-  return (
-    <motion.div
-      style={{ perspective: 1000 }}
-      initial={{ rotateX: 80, rotateY: -18, z: -120, opacity: 0 }}
-      animate={{ rotateX: 0, rotateY: 0, z: 0, opacity: 1 }}
-      exit={{ rotateX: -70, rotateY: 16, z: -120, opacity: 0 }}
-      transition={{
-        type: "spring",
-        stiffness: 120,
-        damping: 16,
-        mass: 1,
-      }}
-      className="text-center font-sans text-3xl sm:text-5xl md:text-6xl font-semibold leading-tight tracking-tight"
-    >
-      {renderWords(line, currentTime)}
-    </motion.div>
-  );
-}
-
-/* ---------- Zoom In (scale 0.7 -> 1, spring) ---------- */
-function ZoomInLine({
-  line,
-  currentTime,
-}: {
-  line: ParsedLrcLine;
-  currentTime: number;
-}) {
-  return (
-    <motion.div
-      initial={{ scale: 0.7, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 1.18, opacity: 0 }}
-      transition={{
-        type: "spring",
-        stiffness: 140,
-        damping: 18,
-        mass: 0.9,
-      }}
-      className="text-center font-sans text-3xl sm:text-5xl md:text-6xl font-semibold leading-tight tracking-tight"
-    >
-      {renderWords(line, currentTime)}
-    </motion.div>
-  );
-}
-
-/* ---------- Zoom Out (membesar saat keluar — efek kamera) ---------- */
-function ZoomOutLine({
-  line,
-  currentTime,
-}: {
-  line: ParsedLrcLine;
-  currentTime: number;
-}) {
-  return (
-    <motion.div
-      initial={{ scale: 1.18, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0.78, opacity: 0, filter: "blur(6px)" }}
-      transition={{
-        type: "spring",
-        stiffness: 130,
-        damping: 20,
-        mass: 0.9,
-      }}
-      className="text-center font-sans text-3xl sm:text-5xl md:text-6xl font-semibold leading-tight tracking-tight"
-    >
-      {renderWords(line, currentTime)}
-    </motion.div>
-  );
-}
-
-/* ---------- Smooth Blur & Fade (sinematik) ---------- */
-function BlurFadeLine({
-  line,
-  currentTime,
-}: {
-  line: ParsedLrcLine;
-  currentTime: number;
-}) {
-  return (
-    <motion.div
-      initial={{ y: 24, opacity: 0, filter: "blur(12px)" }}
-      animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
-      exit={{ y: -24, opacity: 0, filter: "blur(12px)" }}
-      transition={{
-        duration: 0.9,
-        ease: [0.22, 1, 0.36, 1],
-      }}
-      className="text-center font-sans text-3xl sm:text-5xl md:text-6xl font-semibold leading-tight tracking-tight"
-    >
-      {renderWords(line, currentTime)}
-    </motion.div>
-  );
-}
-
-/* Utility memo untuk konsumsi currentTime tanpa re-render seluruh tree. */
-export function useActiveWordCount(line?: ParsedLrcLine) {
-  return useMemo(() => (line ? line.words.length : 0), [line]);
 }

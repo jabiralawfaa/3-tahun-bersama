@@ -35,6 +35,10 @@ export interface ParsedLrcLine {
   animationPreset: AnimationPreset;
   /** Subteks refleksi pribadi */
   reflection: string;
+  /** Ikon SVG baris ini (id ikon / "none" / undefined = otomatis) */
+  iconId?: string;
+  /** Pilihan manual beberapa ikon (mode Ramai memakai semuanya). */
+  iconIds?: string[];
 }
 
 /** Konversi "mm:ss.xx" atau "mm:ss" ke detik (number). */
@@ -116,6 +120,8 @@ export function parseEnhancedLrc(
       words: line.words,
       animationPreset: cfg?.animationPreset ?? line.animationPreset,
       reflection: cfg?.reflection ?? line.reflection,
+      iconId: cfg?.iconIds?.[0] ?? cfg?.iconId,
+      iconIds: cfg?.iconIds,
     };
   });
 
@@ -158,7 +164,12 @@ export function findActiveLineIndex(
 export function buildPlainTimeline(
   plainLines: string[],
   duration: number,
-  lineConfig: { reflection?: string; animationPreset?: AnimationPreset }[] = [],
+  lineConfig: {
+    reflection?: string;
+    animationPreset?: AnimationPreset;
+    iconId?: string;
+    iconIds?: string[];
+  }[] = [],
 ): ParsedLrcLine[] {
   const count = plainLines.length;
   if (count === 0 || duration <= 0) return [];
@@ -174,6 +185,8 @@ export function buildPlainTimeline(
       words: [{ time: i * seg, text }],
       animationPreset: cfg?.animationPreset ?? "blur-fade",
       reflection: cfg?.reflection ?? "",
+      iconId: cfg?.iconIds?.[0] ?? cfg?.iconId,
+      iconIds: cfg?.iconIds,
     };
   });
 }

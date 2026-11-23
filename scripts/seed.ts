@@ -31,6 +31,8 @@ async function main() {
       songArtist: STARLA_SEED.songArtist,
       enhancedLrc: STARLA_SEED.enhancedLrc,
       lineConfig: JSON.stringify(STARLA_SEED.lineConfig),
+      svgIcons: JSON.stringify(STARLA_SEED.svgIcons),
+      iconLayout: STARLA_SEED.iconLayout,
       finalMessage: STARLA_SEED.finalMessage,
       finalFrameLabel: STARLA_SEED.finalFrameLabel,
     },

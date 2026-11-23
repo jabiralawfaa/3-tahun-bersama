@@ -2,20 +2,26 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Save, X, Upload, Music2, FileText, Palette, Sparkles } from "lucide-react";
+import { Save, X, Upload, Music2, FileText, Palette, Sparkles, Shapes } from "lucide-react";
 import {
   parseEnhancedLrc,
   type ParsedLrcLine,
 } from "@/lib/lrc";
 import {
   ANIMATION_PRESETS,
+  DECORATION_INFO,
   DECORATION_KINDS,
   MEMORY_DEFAULTS,
   getMode,
+  type DecorationKind,
+  type IconLayout,
   type LineConfig,
   type Memory,
   type MemoryMode,
 } from "@/data/memories";
+import { ICON_NONE, parseSvg, type SvgIcon, type SvgNode } from "@/lib/svg";
+import { SvgIconManager, validateIconsClient } from "./SvgIconManager";
+import { AnimatedBackground } from "@/app/for/[slug]/components/AnimatedBackground";
 
 /**
  * MemoryForm
@@ -95,6 +101,52 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
   const [lineConfig, setLineConfig] = useState<LineConfig[]>(
     initial?.lineConfig ?? [],
   );
+
+  // Tata letak ikon pada mode tanpa LRC: "crowd" (ramai) / "single" (individual).
+  const [iconLayout, setIconLayout] = useState<IconLayout>(
+    initial?.iconLayout ?? "crowd",
+  );
+
+  // Pustaka ikon SVG animasi (muncul bergantian kiri/kanan tiap baris).
+  const [svgIcons, setSvgIcons] = useState<SvgIcon[]>(initial?.svgIcons ?? []);
+
+  // Saat ikon dihapus, lepas referensi iconId pada baris yang memakainya
+  // (baris kembali ke mode otomatis).
+  const handleIconsChange = useCallback((next: SvgIcon[]) => {
+    setSvgIcons(next);
+    const ids = new Set(next.map((i) => i.id));
+    const stale = (c: LineConfig) =>
+      (!!c.iconId && c.iconId !== ICON_NONE && !ids.has(c.iconId)) ||
+      !!c.iconIds?.some((id) => !ids.has(id));
+    setLineConfig((prev) =>
+      prev.some(stale)
+        ? prev.map((c) => {
+            if (!stale(c)) return c;
+            const keep = (c.iconIds ?? []).filter((id) => ids.has(id));
+            return {
+              ...c,
+              iconIds: keep.length ? keep : undefined,
+              iconId: keep[0],
+            };
+          })
+        : prev,
+    );
+  }, []);
+
+  // Ubah sebagian konfigurasi satu baris (mengisi baris kosong bila perlu).
+  const patchLine = (i: number, patch: Partial<LineConfig>) =>
+    setLineConfig((prev) => {
+      const next = [...prev];
+      while (next.length <= i) {
+        next.push({
+          reflection: "",
+          animationPreset:
+            ANIMATION_PRESETS[next.length % ANIMATION_PRESETS.length],
+        });
+      }
+      next[i] = { ...next[i], ...patch };
+      return next;
+    });
 
   // Daftar baris sesuai mode (untuk konteks + auto-generate lineConfig).
   const parsedLines: ParsedLrcLine[] = useMemo(
@@ -179,6 +231,12 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
       return;
     }
 
+    const iconErr = validateIconsClient(svgIcons);
+    if (iconErr) {
+      setError(iconErr);
+      return;
+    }
+
     const fd = new FormData();
     fd.append("name", form.name.trim());
     fd.append("code", form.code.trim());
@@ -198,6 +256,8 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
       JSON.stringify(mode === "plain" ? plainArr : []),
     );
     fd.append("lineConfig", JSON.stringify(lineConfig));
+    fd.append("svgIcons", JSON.stringify(svgIcons));
+    fd.append("iconLayout", iconLayout);
     fd.append("finalMessage", form.finalMessage);
     fd.append("finalFrameLabel", form.finalFrameLabel);
     if (existingAudio) fd.append("audioSrc", existingAudio);
@@ -440,6 +500,29 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
             )}
           </Section>
 
+          {/* Section: Ikon SVG animasi */}
+          <Section
+            icon={<Shapes className="h-4 w-4" />}
+            title={`Ikon SVG Animasi (${svgIcons.length})`}
+          >
+            {mode === "plain" ? (
+              <IconLayoutPicker value={iconLayout} onChange={setIconLayout} />
+            ) : (
+              <p className="mb-4 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground">
+                Mode <span className="text-amber-warm/80">Lirik (LRC)</span>:
+                ikon memakai grid 2 kolom (ikon separuh, teks separuh) dan
+                bergantian kiri/kanan. Pilihan <em>Ramai</em> / <em>Individual</em>{" "}
+                muncul saat memakai mode <em>Tulisan Biasa</em>.
+              </p>
+            )}
+            <SvgIconManager
+              icons={svgIcons}
+              onChange={handleIconsChange}
+              accent={form.accent}
+              background={form.background}
+            />
+          </Section>
+
           {/* Section: Refleksi / Preset per baris (mode-aware) */}
           {lineCount > 0 && (
             <Section
@@ -452,8 +535,8 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
             >
               <p className="text-xs text-muted-foreground mb-3">
                 {mode === "lrc"
-                  ? "Teks refleksi/pengakuan pribadi yang muncul di bawah baris lirik saat diputar. Pilih preset animasi per baris."
-                  : "Pilih preset animasi untuk tiap ucapan. Ucapan akan tampil sebagai hero utama (tanpa highlight per kata) bergantian selama durasi yang dibagi rata."}
+                  ? "Teks refleksi/pengakuan pribadi yang muncul di bawah baris lirik saat diputar. Pilih preset animasi dan ikon SVG per baris."
+                  : "Pilih preset animasi dan ikon SVG untuk tiap ucapan. Ucapan akan tampil sebagai hero utama (tanpa highlight per kata) bergantian selama durasi yang dibagi rata."}
               </p>
               <div className="space-y-3 thin-scroll max-h-[28rem] overflow-y-auto pr-1">
                 {Array.from({ length: lineCount }, (_, i) => {
@@ -469,37 +552,35 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                           {ctx.slice(0, 40)}
                           {ctx.length > 40 ? "…" : ""}
                         </span>
-                        <select
-                          className="rounded border border-white/10 bg-midnight px-2 py-1 text-[11px] font-mono text-foreground outline-none focus:border-amber-warm/40"
-                          value={lineConfig[i]?.animationPreset ?? "blur-fade"}
-                          onChange={(e) =>
-                            setLineConfig((prev) => {
-                              const next = [...prev];
-                              while (next.length <= i) {
-                                next.push({
-                                  reflection: "",
-                                  animationPreset:
-                                    ANIMATION_PRESETS[
-                                      next.length % ANIMATION_PRESETS.length
-                                    ],
-                                });
-                              }
-                              next[i] = {
-                                ...next[i],
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            className="rounded border border-white/10 bg-midnight px-2 py-1 text-[11px] font-mono text-foreground outline-none focus:border-amber-warm/40"
+                            value={lineConfig[i]?.animationPreset ?? "blur-fade"}
+                            onChange={(e) =>
+                              patchLine(i, {
                                 animationPreset: e.target
                                   .value as LineConfig["animationPreset"],
-                              };
-                              return next;
-                            })
-                          }
-                        >
-                          {ANIMATION_PRESETS.map((p) => (
-                            <option key={p} value={p}>
-                              {p}
-                            </option>
-                          ))}
-                        </select>
+                              })
+                            }
+                          >
+                            {ANIMATION_PRESETS.map((p) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
+                      {svgIcons.length > 0 && (
+                        <LineIconPicker
+                          icons={svgIcons}
+                          iconId={lineConfig[i]?.iconId}
+                          iconIds={lineConfig[i]?.iconIds}
+                          multi={mode === "plain" && iconLayout === "crowd"}
+                          side={i % 2 === 0 ? "kiri" : "kanan"}
+                          onChange={(patch) => patchLine(i, patch)}
+                        />
+                      )}
                       {/* Refleksi hanya di mode LRC. Mode plain: ucapan sudah
                           jadi konten utama, tidak perlu subteks. */}
                       {mode === "lrc" && (
@@ -507,25 +588,7 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                           className="thin-scroll w-full resize-y rounded border border-white/10 bg-midnight/60 px-3 py-2 text-sm text-foreground outline-none focus:border-amber-warm/40"
                           rows={2}
                           value={lineConfig[i]?.reflection ?? ""}
-                          onChange={(e) =>
-                            setLineConfig((prev) => {
-                              const next = [...prev];
-                              while (next.length <= i) {
-                                next.push({
-                                  reflection: "",
-                                  animationPreset:
-                                    ANIMATION_PRESETS[
-                                      next.length % ANIMATION_PRESETS.length
-                                    ],
-                                });
-                              }
-                              next[i] = {
-                                ...next[i],
-                                reflection: e.target.value,
-                              };
-                              return next;
-                            })
-                          }
+                          onChange={(e) => patchLine(i, { reflection: e.target.value })}
                           placeholder="Refleksi/pengakuan untuk baris ini…"
                         />
                       )}
@@ -582,7 +645,7 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
               />
             </div>
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Jenis Dekorasi SVG">
+              <Field label={`Jenis Dekorasi SVG (${DECORATION_KINDS.length} pilihan)`}>
                 <select
                   className={inputCls}
                   value={form.decoration}
@@ -590,10 +653,13 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                 >
                   {DECORATION_KINDS.map((d) => (
                     <option key={d} value={d}>
-                      {d}
+                      {DECORATION_INFO[d].label}
                     </option>
                   ))}
                 </select>
+                <p className="mt-1.5 text-[11px] text-muted-foreground/70">
+                  {DECORATION_INFO[form.decoration as DecorationKind]?.hint}
+                </p>
               </Field>
               <Field label="Label Tema">
                 <input
@@ -603,6 +669,30 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                 />
               </Field>
             </div>
+            {/* Preview dekorasi latar (animasi sungguhan) */}
+            <div
+              className="relative mt-4 h-52 overflow-hidden rounded-lg border border-white/10"
+              style={
+                {
+                  backgroundColor: form.background,
+                  "--amber-warm": form.accent,
+                  "--rose-warm": form.accentSoft,
+                } as React.CSSProperties
+              }
+            >
+              <AnimatedBackground
+                key={form.decoration}
+                decoration={form.decoration as DecorationKind}
+                activeBait={0}
+              />
+              <p
+                className="absolute left-3 top-2 font-mono text-[10px] uppercase tracking-wider"
+                style={{ color: form.accent }}
+              >
+                preview dekorasi · live
+              </p>
+            </div>
+
             {/* Preview live */}
             <div className="mt-4 rounded-lg border border-white/10 p-4"
               style={{
@@ -738,5 +828,218 @@ function ColorField({
         />
       </div>
     </Field>
+  );
+}
+
+/* ---------- Pemilih tata letak ikon (mode tanpa LRC) ---------- */
+function IconLayoutPicker({
+  value,
+  onChange,
+}: {
+  value: IconLayout;
+  onChange: (v: IconLayout) => void;
+}) {
+  const options: { v: IconLayout; title: string; desc: string }[] = [
+    {
+      v: "crowd",
+      title: "Ramai",
+      desc: "3–5 ikon kecil muncul bersamaan mengisi ruang kosong di sekitar ucapan.",
+    },
+    {
+      v: "single",
+      title: "Individual",
+      desc: "Satu ikon lebih besar di atas ucapan; ucapan turun sedikit menyesuaikan.",
+    },
+  ];
+  return (
+    <div className="mb-5">
+      <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
+        Tata letak ikon · mode tanpa LRC
+      </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup">
+        {options.map((o) => {
+          const on = value === o.v;
+          return (
+            <button
+              key={o.v}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => onChange(o.v)}
+              className={`flex gap-3 rounded-lg border p-3 text-left transition-colors ${
+                on
+                  ? "border-amber-warm/50 bg-amber-warm/10"
+                  : "border-white/10 bg-white/[0.02] hover:bg-white/[0.06]"
+              }`}
+            >
+              <LayoutSketch kind={o.v} active={on} />
+              <span className="min-w-0">
+                <span
+                  className={`block font-mono text-[11px] uppercase tracking-wider ${
+                    on ? "text-amber-warm" : "text-foreground/80"
+                  }`}
+                >
+                  {o.title}
+                </span>
+                <span className="mt-1 block text-[11px] leading-snug text-muted-foreground">
+                  {o.desc}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Sketsa mini tata letak (kotak = ikon, garis = teks ucapan). */
+function LayoutSketch({ kind, active }: { kind: IconLayout; active: boolean }) {
+  const c = active ? "var(--amber-warm)" : "rgba(255,255,255,0.35)";
+  return (
+    <svg
+      width="76"
+      height="56"
+      viewBox="0 0 76 56"
+      className="shrink-0 rounded border border-white/10 bg-black/20"
+      fill="none"
+      aria-hidden="true"
+    >
+      {kind === "crowd" ? (
+        <>
+          {[
+            [6, 6], [62, 5], [4, 24], [64, 26], [8, 42], [60, 43],
+          ].map(([x, y], i) => (
+            <rect key={i} x={x} y={y} width="7" height="7" rx="1.5" stroke={c} strokeWidth="1.2" />
+          ))}
+          <rect x="22" y="25" width="32" height="4" rx="2" fill={c} />
+        </>
+      ) : (
+        <>
+          <rect x="29" y="6" width="18" height="18" rx="3" stroke={c} strokeWidth="1.4" />
+          <rect x="16" y="34" width="44" height="5" rx="2.5" fill={c} />
+          <rect x="24" y="43" width="28" height="3" rx="1.5" fill={c} fillOpacity="0.5" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/* ---------- Pilih ikon manual per baris ---------- */
+function LineIconPicker({
+  icons,
+  iconId,
+  iconIds,
+  multi,
+  side,
+  onChange,
+}: {
+  icons: SvgIcon[];
+  iconId?: string;
+  iconIds?: string[];
+  /** true = mode Ramai: boleh pilih beberapa ikon (maks. 5). */
+  multi: boolean;
+  side: string;
+  onChange: (patch: Partial<LineConfig>) => void;
+}) {
+  const none = iconId === ICON_NONE;
+  const selected = (iconIds?.length ? iconIds : iconId && !none ? [iconId] : [])
+    .filter((id) => icons.some((i) => i.id === id));
+  const auto = !none && selected.length === 0;
+
+  const setSel = (ids: string[]) =>
+    onChange({ iconIds: ids.length ? ids : undefined, iconId: ids[0] });
+
+  const toggle = (id: string) => {
+    if (!multi) return setSel(selected[0] === id ? [] : [id]);
+    if (selected.includes(id)) return setSel(selected.filter((x) => x !== id));
+    if (selected.length >= 5) return;
+    setSel([...selected, id]);
+  };
+
+  const chip = (on: boolean) =>
+    `inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-mono transition-colors ${
+      on
+        ? "border-amber-warm/60 bg-amber-warm/15 text-amber-warm"
+        : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.08]"
+    }`;
+
+  return (
+    <div className="mb-2">
+      <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">
+        Ikon baris ini ·{" "}
+        {auto
+          ? `otomatis (sisi ${side})`
+          : none
+            ? "tanpa ikon"
+            : multi
+              ? `${selected.length} dipilih (maks. 5)`
+              : "dipilih manual"}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          aria-pressed={auto}
+          className={chip(auto)}
+          onClick={() => onChange({ iconId: undefined, iconIds: undefined })}
+        >
+          Otomatis
+        </button>
+        <button
+          type="button"
+          aria-pressed={none}
+          className={chip(none)}
+          onClick={() => onChange({ iconId: ICON_NONE, iconIds: undefined })}
+        >
+          Tanpa
+        </button>
+        {icons.map((ic) => {
+          const on = selected.includes(ic.id);
+          return (
+            <button
+              key={ic.id}
+              type="button"
+              aria-pressed={on}
+              className={chip(on)}
+              onClick={() => toggle(ic.id)}
+              title={ic.name}
+            >
+              <IconThumb svg={ic.svg} />
+              <span className="max-w-[7rem] truncate">{ic.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Thumbnail statis ikon (tanpa animasi) dari pohon SVG yang sudah di-whitelist. */
+function IconThumb({ svg }: { svg: string }) {
+  const parsed = useMemo(() => parseSvg(svg), [svg]);
+  if (!parsed.ok) return <span className="h-4 w-4" />;
+  const [x, y, w, h] = parsed.value.viewBox;
+  const render = (nodes: SvgNode[]): React.ReactNode[] =>
+    nodes.map((n, k) => {
+      const props: Record<string, string> = {};
+      for (const [a, v] of Object.entries(n.attrs))
+        props[a === "fill-rule" ? "fillRule" : a] = v;
+      if (n.tag === "g") return <g key={k} {...props}>{render(n.children)}</g>;
+      const Tag = n.tag as "path";
+      return <Tag key={k} {...props} />;
+    });
+  return (
+    <svg
+      viewBox={`${x} ${y} ${w} ${h}`}
+      className="h-4 w-4 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={(Math.max(w, h) / 24) * 1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {render(parsed.value.nodes)}
+    </svg>
   );
 }

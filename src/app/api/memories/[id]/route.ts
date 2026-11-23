@@ -7,7 +7,12 @@ import { NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { db } from "@/lib/db";
-import { memoryFromDb, type LineConfig } from "@/data/memories";
+import {
+  memoryFromDb,
+  normalizeIconLayout,
+  type LineConfig,
+} from "@/data/memories";
+import { validateSvgIcons } from "@/lib/svg";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -141,6 +146,26 @@ export async function PUT(
     }
   }
 
+  // Pustaka ikon SVG: hanya diganti bila dikirim; jika tidak, pertahankan.
+  let svgIconsJson = (existing as { svgIcons?: string }).svgIcons ?? "[]";
+  const svgIconsRaw = fstr(form, "svgIcons");
+  if (svgIconsRaw) {
+    let parsedIcons: unknown;
+    try {
+      parsedIcons = JSON.parse(svgIconsRaw);
+    } catch {
+      return NextResponse.json(
+        { error: "svgIcons bukan JSON valid" },
+        { status: 400 },
+      );
+    }
+    const svgCheck = validateSvgIcons(parsedIcons);
+    if (svgCheck.error) {
+      return NextResponse.json({ error: svgCheck.error }, { status: 400 });
+    }
+    svgIconsJson = JSON.stringify(svgCheck.icons);
+  }
+
   const updated = await db.memory.update({
     where: { id },
     data: {
@@ -159,6 +184,14 @@ export async function PUT(
       enhancedLrc,
       plainLines: JSON.stringify(plainLines),
       lineConfig: JSON.stringify(lineConfig),
+      svgIcons: svgIconsJson,
+      iconLayout: normalizeIconLayout(
+        fstr(
+          form,
+          "iconLayout",
+          (existing as { iconLayout?: string }).iconLayout ?? "crowd",
+        ),
+      ),
       finalMessage: fstr(form, "finalMessage", existing.finalMessage),
       finalFrameLabel: fstr(form, "finalFrameLabel", existing.finalFrameLabel),
     },

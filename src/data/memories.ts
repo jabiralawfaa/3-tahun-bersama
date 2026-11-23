@@ -16,9 +16,32 @@
  * ------------------------------------------------------------------
  */
 
+import { parseSvgIconsJson, STARTER_ICONS, type SvgIcon } from "@/lib/svg";
+
 export type AnimationPreset = "3d-flip" | "zoom-in" | "zoom-out" | "blur-fade";
 
-export type DecorationKind = "bezier" | "constellation" | "orbit";
+export type DecorationKind =
+  | "bezier"
+  | "constellation"
+  | "orbit"
+  | "aurora"
+  | "waves"
+  | "wireframe"
+  | "circuit"
+  | "code-rain"
+  | "bokeh"
+  | "shooting-stars"
+  | "mandala";
+
+/**
+ * Tata letak ikon SVG pada mode "tanpa LRC" (ucapan biasa):
+ *  - "crowd"  (ramai)      : 3–5 ikon kecil muncul bersamaan mengisi ruang
+ *                            kosong di sekitar ucapan.
+ *  - "single" (individual) : satu ikon lebih besar di atas ucapan; ucapan
+ *                            turun sedikit menyesuaikan.
+ * Pada mode LRC tata letaknya tetap grid 2 kolom (ikon | teks).
+ */
+export type IconLayout = "crowd" | "single";
 
 export interface MemoryTheme {
   /** Label tema pendek untuk identitas (mis. "Interactive Design Canvas") */
@@ -38,6 +61,12 @@ export interface LineConfig {
   reflection: string;
   /** Preset animasi kinetic typography untuk baris ini */
   animationPreset: AnimationPreset;
+  /** Ikon SVG untuk baris ini: id ikon, "none" (tanpa ikon), atau kosong
+   *  (otomatis bergantian dari pustaka ikon). */
+  iconId?: string;
+  /** Pilihan manual beberapa ikon (urutan = prioritas). Mode LRC/Individual
+   *  memakai yang pertama; mode Ramai memakai semuanya (maks. 5). */
+  iconIds?: string[];
 }
 
 export interface Memory {
@@ -68,6 +97,10 @@ export interface Memory {
   /** Pemetaan refleksi & preset animasi per baris (sejajar urutan LRC
    *  atau urutan plainLines). */
   lineConfig: LineConfig[];
+  /** Pustaka ikon SVG animasi (muncul bergantian kiri/kanan tiap baris) */
+  svgIcons: SvgIcon[];
+  /** Tata letak ikon pada mode ucapan biasa (tanpa LRC). */
+  iconLayout: IconLayout;
   /** Pesan penutup yang muncul saat lagu selesai */
   finalMessage: string;
   /** Label monospace kecil di sudut frame penutup */
@@ -269,7 +302,39 @@ export const DECORATION_KINDS: DecorationKind[] = [
   "bezier",
   "constellation",
   "orbit",
+  "aurora",
+  "waves",
+  "wireframe",
+  "circuit",
+  "code-rain",
+  "bokeh",
+  "shooting-stars",
+  "mandala",
 ];
+
+/** Label + penjelasan singkat tiap dekorasi (untuk dropdown Tema). */
+export const DECORATION_INFO: Record<
+  DecorationKind,
+  { label: string; hint: string }
+> = {
+  bezier: { label: "Bezier & Vector Node", hint: "Garis pen-tool menggambar diri" },
+  constellation: { label: "Rasi Bintang", hint: "Bintang berkelip dan garis rasi" },
+  orbit: { label: "Cincin Orbit", hint: "Cincin putus-putus berputar dengan titik mengorbit" },
+  aurora: { label: "Aurora", hint: "Pita cahaya lembut yang bergeser perlahan" },
+  waves: { label: "Gelombang", hint: "Tiga lapis gelombang mengalir di bawah" },
+  wireframe: { label: "Wireframe 3D", hint: "Kubus & segitiga kawat melayang berputar" },
+  circuit: { label: "Sirkuit", hint: "Jalur PCB dengan simpul berdenyut" },
+  "code-rain": { label: "Hujan Kode", hint: "Kolom angka biner jatuh perlahan" },
+  bokeh: { label: "Bokeh", hint: "Lingkaran cahaya naik seperti gelembung" },
+  "shooting-stars": { label: "Bintang Jatuh", hint: "Goresan cahaya melintas diagonal" },
+  mandala: { label: "Mandala Geometri", hint: "Poligon konsentris berputar berlawanan" },
+};
+
+export const ICON_LAYOUTS: IconLayout[] = ["crowd", "single"];
+
+export function normalizeIconLayout(v: unknown): IconLayout {
+  return v === "single" ? "single" : "crowd";
+}
 
 /* ------------------------------------------------------------------
  * Seed: entri starla (dipakai scripts/seed.ts untuk mengisi DB awal).
@@ -291,6 +356,8 @@ export const STARLA_SEED: Memory = {
   songArtist: "Virgoun",
   enhancedLrc: STARLA_LRC,
   lineConfig: STARLA_LINE_CONFIG,
+  svgIcons: STARTER_ICONS.map((s, i) => ({ ...s, id: `starter-${i + 1}` })),
+  iconLayout: "crowd",
   finalMessage:
     "Entah kamu sadar atau tidak, selama 3 tahun ini, aku mencintaimu",
   finalFrameLabel: "Final_Confession.tsx",
@@ -318,6 +385,10 @@ export interface MemoryDbRow {
   enhancedLrc: string;
   plainLines: string; // JSON string
   lineConfig: string; // JSON string
+  /** JSON string SvgIcon[] (kolom baru; bisa belum ada di DB lama) */
+  svgIcons?: string | null;
+  /** Kolom baru; bisa belum ada di DB lama */
+  iconLayout?: string | null;
   finalMessage: string;
   finalFrameLabel: string;
   createdAt: Date;
@@ -360,6 +431,8 @@ export function memoryFromDb(row: MemoryDbRow): Memory {
     enhancedLrc: row.enhancedLrc,
     plainLines,
     lineConfig,
+    svgIcons: parseSvgIconsJson(row.svgIcons),
+    iconLayout: normalizeIconLayout(row.iconLayout),
     finalMessage: row.finalMessage,
     finalFrameLabel: row.finalFrameLabel,
     createdAt: row.createdAt,

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, Pause } from "lucide-react";
 import { formatTime } from "@/lib/lrc";
@@ -22,7 +23,7 @@ interface AudioPlayerProps {
   fadingOut: boolean;
 }
 
-export function AudioPlayer({
+export const AudioPlayer = memo(function AudioPlayer({
   isPlaying,
   onTogglePlay,
   currentTime,
@@ -32,6 +33,8 @@ export function AudioPlayer({
   songArtist,
   fadingOut,
 }: AudioPlayerProps) {
+  // currentTime hanya diperbarui ±4x/detik oleh halaman; bar bergerak halus
+  // lewat transition CSS (transform/left), bukan animasi framer per frame.
   const pct = Math.max(0, Math.min(1, progress)) * 100;
 
   return (
@@ -44,7 +47,7 @@ export function AudioPlayer({
           exit={{ opacity: 0, y: 24 }}
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 backdrop-blur-xl shadow-[0_8px_40px_rgba(0,0,0,0.4)]">
+          <div className="relative overflow-hidden perf-glass rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 backdrop-blur-xl shadow-[0_8px_40px_rgba(0,0,0,0.4)]">
             {/* Aksen glow di belakang tombol */}
             <div
               aria-hidden
@@ -92,24 +95,24 @@ export function AudioPlayer({
                   aria-valuemin={0}
                   aria-valuemax={100}
                 >
-                  <motion.div
-                    className="absolute inset-y-0 left-0 rounded-full"
+                  <div
+                    className="absolute inset-y-0 left-0 w-full origin-left rounded-full"
                     style={{
                       background:
                         "linear-gradient(90deg, var(--amber-warm), var(--rose-warm))",
+                      transform: `scaleX(${pct / 100})`,
+                      transition: "transform 0.3s linear",
                     }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 0.15, ease: "linear" }}
                   />
                   {/* Titik indikator */}
-                  <motion.div
+                  <div
                     className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-white/40 bg-amber-warm"
                     style={{
+                      left: `calc(${pct}% - 5px)`,
+                      transition: "left 0.3s linear",
                       boxShadow:
                         "0 0 10px color-mix(in srgb, var(--amber-warm) 60%, transparent)",
                     }}
-                    animate={{ left: `calc(${pct}% - 5px)` }}
-                    transition={{ duration: 0.15, ease: "linear" }}
                   />
                 </div>
               </div>
@@ -119,4 +122,4 @@ export function AudioPlayer({
       )}
     </AnimatePresence>
   );
-}
+});

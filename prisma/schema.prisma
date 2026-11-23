@@ -60,6 +60,11 @@ model Memory {
   plainLines   String   @default("[]")
   /// JSON string LineConfig[] (refleksi + preset animasi per baris)
   lineConfig   String   @default("[]")
+  /// JSON string SvgIcon[] — pustaka ikon SVG animasi. Tiap baris lirik
+  /// memakai satu ikon (bergantian kiri/kanan); mode "outline" | "fill".
+  svgIcons     String   @default("[]")
+  /// Tata letak ikon mode ucapan biasa: "crowd" (ramai) | "single" (individual)
+  iconLayout   String   @default("crowd")
   /// Pesan penutup saat lagu selesai
   finalMessage String
   finalFrameLabel String @default("Final_Confession.tsx")

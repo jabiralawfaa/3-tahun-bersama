@@ -233,3 +233,901 @@
 .animate-micro-shake {
   animation: micro-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
+
+/* ==================================================================
+ * Ikon SVG animasi (AnimatedSvgIcon)
+ * Tiga lapis: .svgi-pop (masuk/keluar 3D) > .svgi-idle (melayang)
+ * > svg (glow neon / napas). Garis digambar lewat pathLength=1 +
+ * stroke-dashoffset; fill naik lewat clip-path inset. Semuanya
+ * memakai transition agar bisa dibalik mulus bila baris berganti
+ * sebelum animasi masuk selesai.
+ * ================================================================== */
+.svgi {
+  --ic: var(--amber-warm);
+  --sw: 1.5;
+  --svgi-tx: -40px;
+  --svgi-rot: -75deg;
+  --svgi-dir: 1;
+  position: relative;
+  display: block;
+  flex: none;
+  width: var(--svgi-size, 96px);
+  aspect-ratio: 1 / 1;
+  perspective: 700px;
+}
+.svgi--right {
+  --svgi-tx: 40px;
+  --svgi-rot: 75deg;
+  --svgi-dir: -1;
+}
+.svgi-pop {
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transform: translateX(var(--svgi-tx)) rotateY(var(--svgi-rot)) scale(0.35);
+  transition:
+    opacity 0.35s ease-in,
+    transform 0.6s cubic-bezier(0.5, 0, 0.75, 0);
+}
+.svgi.is-on .svgi-pop {
+  opacity: 1;
+  transform: translateX(0) rotateY(0deg) scale(1);
+  transition:
+    opacity 0.5s ease-out,
+    transform 1.1s cubic-bezier(0.22, 1.35, 0.36, 1);
+}
+.svgi-idle {
+  width: 100%;
+  height: 100%;
+  animation: svgi-float 5.5s ease-in-out infinite;
+}
+.svgi-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.svgi-s {
+  /* butt: dash nol-panjang saat awal menggambar tidak meninggalkan titik */
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+  stroke-width: var(--sw);
+}
+
+/* --- Outline neon: garis menggambar diri --- */
+.svgi-stroke .svgi-s {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ic) 55%, white);
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  transition:
+    stroke-dashoffset 0.55s cubic-bezier(0.5, 0, 0.75, 0)
+      calc(min(var(--i), 10) * 22ms),
+    opacity 0s linear calc(0.55s + min(var(--i), 10) * 22ms);
+}
+.svgi.is-on .svgi-stroke .svgi-s {
+  stroke-dashoffset: 0;
+  opacity: 1;
+  transition:
+    stroke-dashoffset 1.1s cubic-bezier(0.65, 0, 0.35, 1)
+      calc(min(var(--i), 12) * 80ms),
+    opacity 0s linear calc(min(var(--i), 12) * 80ms);
+}
+.svgi--fill .svgi-stroke .svgi-s {
+  stroke-width: calc(var(--sw) * 0.7);
+}
+/* Glow statis (diraster sekali). Denyut cahaya dibuat lewat opacity pada
+ * .svgi-idle (compositor) — jauh lebih ringan daripada menganimasikan filter. */
+.svgi--outline .svgi-svg {
+  filter: drop-shadow(0 0 2px var(--ic))
+    drop-shadow(0 0 9px color-mix(in srgb, var(--ic) 70%, transparent));
+}
+.svgi--outline .svgi-stroke {
+  animation: svgi-flicker 7s steps(1, end) 2.2s infinite;
+}
+
+/* --- Fill: area di dalam outline terisi dari bawah ke atas --- */
+.svgi-fill {
+  clip-path: inset(100% 0 0 0);
+  transition: clip-path 0.55s cubic-bezier(0.5, 0, 0.75, 0);
+}
+.svgi.is-on .svgi-fill {
+  clip-path: inset(0 0 0 0);
+  transition: clip-path 1.25s cubic-bezier(0.3, 0.7, 0.2, 1) 0.4s;
+}
+.svgi-fill .svgi-s {
+  fill: var(--ic);
+  stroke: none;
+}
+.svgi--fill .svgi-svg {
+  filter: drop-shadow(0 0 9px color-mix(in srgb, var(--ic) 55%, transparent));
+  animation: svgi-breathe 2.4s ease-in-out infinite;
+  transform-origin: 50% 55%;
+}
+
+@keyframes svgi-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(calc(var(--svgi-dir) * -2deg));
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-7%) rotate(calc(var(--svgi-dir) * 2.5deg));
+    opacity: 0.84;
+  }
+}
+@keyframes svgi-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes svgi-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  91% {
+    opacity: 0.72;
+  }
+  92% {
+    opacity: 1;
+  }
+  94% {
+    opacity: 0.8;
+  }
+  95% {
+    opacity: 1;
+  }
+}
+
+/* ==================================================================
+ * Lirik kinetik — SEMUA gerak memakai CSS (transform/opacity) sehingga
+ * berjalan di compositor GPU, bukan di main thread JavaScript.
+ *
+ *   .kl-stage    grid 1 sel: layer baris aktif + (maks.) 1 layer yang
+ *                sedang keluar bertumpuk di sel yang sama → tinggi
+ *                stabil, tidak ada elemen "nyangkut" menumpuk.
+ *   .kl-layer    masuk/keluar per preset (data-preset / data-phase)
+ *   .kl-drift    "kamera" pelan sepanjang durasi baris
+ *   .kl-idle     napas melayang
+ *   .kw / .kword kata: masuk bergiliran / sorotan kata aktif
+ *   .kl-row      grid 2 kolom: ikon | teks (bergantian kiri/kanan)
+ * ================================================================== */
+.kl-tilt {
+  transform: perspective(1400px) rotateX(var(--kl-rx, 0deg))
+    rotateY(var(--kl-ry, 0deg));
+  transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+
+.kl-stage {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 46vh;
+}
+.kl-layer {
+  grid-area: 1 / 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.kl-layer[data-phase="leave"] {
+  pointer-events: none;
+}
+.kl-drift {
+  display: block;
+  animation-duration: var(--kl-dur, 6s);
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+.kl-idle {
+  display: block;
+  animation: kl-idle 11s ease-in-out infinite;
+}
+
+/* --- Grid 2 kolom: ikon & teks masing-masing separuh lebar --- */
+.kl-row {
+  display: grid;
+  width: 100%;
+  max-width: 76rem;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+}
+.kl-row--icon {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: clamp(0.5rem, 3vw, 3rem);
+}
+.kl-row--icon .kl-icon-cell {
+  order: 0;
+}
+.kl-row--icon-right .kl-icon-cell {
+  order: 2;
+}
+.kl-icon-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+.kl-text-cell {
+  min-width: 0;
+  text-align: center;
+}
+@media (max-width: 639px) {
+  /* Layar kecil: ikon ±30% agar teks tetap lega */
+  .kl-row--icon {
+    grid-template-columns: 30% minmax(0, 1fr);
+    column-gap: 0.5rem;
+  }
+  .kl-row--icon-right {
+    grid-template-columns: minmax(0, 1fr) 30%;
+  }
+}
+
+/* --- Mode tanpa LRC: ucapan di tengah + ikon ramai / individual --- */
+.kl-stage--plain {
+  min-height: 56vh;
+}
+.kl-layer--plain {
+  position: relative;
+  align-self: stretch;
+  justify-content: center;
+}
+.kl-layer--single .kl-single-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: clamp(0.25rem, 1.5vh, 1rem);
+}
+.kl-crowd {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.kl-crowd-item {
+  position: absolute;
+  width: clamp(34px, 6vw, 64px);
+  transform: translate(-50%, -50%) rotate(var(--cr, 0deg)) scale(var(--cs, 1));
+}
+@media (max-width: 639px) {
+  .kl-crowd-item--mid {
+    display: none;
+  }
+}
+
+/* --- Masuk (enter) per preset --- */
+.kl-layer[data-phase="enter"] .kl-anim {
+  animation-duration: 1s;
+  animation-timing-function: cubic-bezier(0.2, 1.15, 0.3, 1);
+  animation-delay: 0.1s;
+  animation-fill-mode: both;
+}
+.kl-layer[data-phase="enter"][data-preset="3d-flip"] .kl-anim {
+  animation-name: kl-in-3d;
+}
+.kl-layer[data-phase="enter"][data-preset="zoom-in"] .kl-anim {
+  animation-name: kl-in-zoomin;
+}
+.kl-layer[data-phase="enter"][data-preset="zoom-out"] .kl-anim {
+  animation-name: kl-in-zoomout;
+}
+.kl-layer[data-phase="enter"][data-preset="blur-fade"] .kl-anim {
+  animation-name: kl-in-blur;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* --- Keluar (leave): cepat & tegas, agar tidak sempat menumpuk --- */
+.kl-layer[data-phase="leave"] .kl-anim {
+  animation-duration: 0.32s;
+  animation-timing-function: ease-in;
+  animation-fill-mode: both;
+}
+.kl-layer[data-phase="leave"][data-preset="3d-flip"] .kl-anim {
+  animation-name: kl-out-3d;
+}
+.kl-layer[data-phase="leave"][data-preset="zoom-in"] .kl-anim {
+  animation-name: kl-out-zoomin;
+}
+.kl-layer[data-phase="leave"][data-preset="zoom-out"] .kl-anim {
+  animation-name: kl-out-zoomout;
+}
+.kl-layer[data-phase="leave"][data-preset="blur-fade"] .kl-anim {
+  animation-name: kl-out-blur;
+}
+/* Label & refleksi langsung hilang saat keluar (tidak numpuk di baris baru) */
+.kl-layer[data-phase="leave"] .kl-label,
+.kl-layer[data-phase="leave"] .kl-ref,
+.kl-layer[data-phase="leave"] .kl-preview {
+  animation: none !important;
+  opacity: 0;
+}
+.kl-ref {
+  animation: kl-ref-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+}
+.kl-label {
+  animation: kl-fade 0.5s ease-out 0.35s both;
+}
+
+@keyframes kl-in-3d {
+  from {
+    opacity: 0;
+    transform: perspective(1000px) translateZ(-120px) rotateX(80deg)
+      rotateY(-18deg);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1000px) translateZ(0) rotateX(0) rotateY(0);
+  }
+}
+@keyframes kl-out-3d {
+  to {
+    opacity: 0;
+    transform: perspective(1000px) translateZ(-120px) rotateX(-70deg)
+      rotateY(16deg);
+  }
+}
+@keyframes kl-in-zoomin {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes kl-out-zoomin {
+  to {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+}
+@keyframes kl-in-zoomout {
+  from {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes kl-out-zoomout {
+  to {
+    opacity: 0;
+    transform: scale(0.78);
+  }
+}
+@keyframes kl-in-blur {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+    filter: blur(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+@keyframes kl-out-blur {
+  to {
+    opacity: 0;
+    transform: translateY(-24px);
+    filter: blur(8px);
+  }
+}
+@keyframes kl-ref-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes kl-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* "Kamera" pelan sepanjang durasi baris, sesuai preset */
+.kl-drift[data-preset="3d-flip"] {
+  animation-name: kl-drift-3d;
+}
+.kl-drift[data-preset="zoom-in"] {
+  animation-name: kl-drift-zoomin;
+}
+.kl-drift[data-preset="zoom-out"] {
+  animation-name: kl-drift-zoomout;
+}
+.kl-drift[data-preset="blur-fade"] {
+  animation-name: kl-drift-blur;
+}
+@keyframes kl-drift-3d {
+  from {
+    transform: perspective(1000px) rotateY(-8deg) rotateX(3deg);
+  }
+  to {
+    transform: perspective(1000px) rotateY(8deg) rotateX(-3deg);
+  }
+}
+@keyframes kl-drift-zoomin {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.09);
+  }
+}
+@keyframes kl-drift-zoomout {
+  from {
+    transform: scale(1.09);
+  }
+  to {
+    transform: scale(0.98);
+  }
+}
+@keyframes kl-drift-blur {
+  from {
+    transform: scale(1) translateY(0);
+  }
+  to {
+    transform: scale(1.035) translateY(-12px);
+  }
+}
+@keyframes kl-idle {
+  0%,
+  100% {
+    transform: perspective(1000px) translateY(0) rotateX(0) rotateY(0)
+      rotateZ(0);
+  }
+  25% {
+    transform: perspective(1000px) translateY(-6px) rotateX(2.4deg)
+      rotateY(-2.2deg) rotateZ(0.45deg);
+  }
+  75% {
+    transform: perspective(1000px) translateY(5px) rotateX(-2.4deg)
+      rotateY(2.2deg) rotateZ(-0.45deg);
+  }
+}
+
+/* --- Kata: masuk bergiliran (stagger lewat --wi) --- */
+.kw {
+  display: inline-block;
+  white-space: pre;
+  animation-duration: 0.8s;
+  animation-timing-function: cubic-bezier(0.2, 1.2, 0.3, 1);
+  animation-delay: calc(0.12s + min(var(--wi, 0), 10) * 60ms);
+  animation-fill-mode: both;
+}
+.kl-layer[data-phase="leave"] .kw {
+  animation: none;
+}
+.kl-layer[data-preset="3d-flip"] .kw {
+  animation-name: kw-in-3d;
+  transform-origin: 50% 100%;
+}
+.kl-layer[data-preset="zoom-in"] .kw {
+  animation-name: kw-in-zoomin;
+}
+.kl-layer[data-preset="zoom-out"] .kw {
+  animation-name: kw-in-zoomout;
+}
+.kl-layer[data-preset="blur-fade"] .kw {
+  animation-name: kw-in-blur;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes kw-in-3d {
+  from {
+    opacity: 0;
+    transform: perspective(700px) rotateX(-85deg) translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(700px) rotateX(0) translateY(0);
+  }
+}
+@keyframes kw-in-zoomin {
+  from {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes kw-in-zoomout {
+  from {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes kw-in-blur {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* --- Kata: sorotan aktif (transition CSS, tanpa JS per frame) --- */
+.kword {
+  display: inline-block;
+  white-space: pre;
+  color: oklch(0.86 0.01 270 / 0.55);
+  transform-origin: 50% 70%;
+  transition:
+    color 0.25s ease,
+    transform 0.32s cubic-bezier(0.3, 1.5, 0.5, 1),
+    text-shadow 0.3s ease;
+  /* melayang halus; `translate` terpisah dari `transform` */
+  animation: word-bob 5.2s ease-in-out infinite;
+  animation-delay: calc(var(--wi, 0) * -0.75s);
+}
+.kword.is-active {
+  color: var(--amber-warm);
+  transform: translateY(-2px) scale(1.05);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--amber-warm) 45%, transparent);
+}
+.kword.is-plain {
+  color: var(--amber-warm);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--amber-warm) 40%, transparent);
+}
+@keyframes word-bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -3px;
+  }
+}
+
+/* ==================================================================
+ * Latar beranimasi — hanya transform/opacity (compositor). Keadaan
+ * dasar (tanpa animasi) = tampilan akhir yang wajar, jadi mode ringan
+ * cukup mematikan animation pada .bgfx.
+ * ================================================================== */
+.bg-aura-a {
+  will-change: transform, opacity;
+  animation: bg-aura-a 18s ease-in-out infinite;
+}
+.bg-aura-b {
+  will-change: transform, opacity;
+  animation: bg-aura-b 24s ease-in-out infinite;
+}
+@keyframes bg-aura-a {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.75;
+  }
+}
+@keyframes bg-aura-b {
+  0%,
+  100% {
+    transform: scale(1.1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+}
+/* menggambar diri sekali (pathLength=1) */
+.bg-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: bg-draw var(--bgt, 3s) ease-in-out var(--bgd, 0s) both;
+}
+@keyframes bg-draw {
+  from {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+.bg-pulse {
+  animation: bg-pulse var(--bgp, 3s) ease-in-out var(--bgd, 0s) infinite;
+}
+@keyframes bg-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.15);
+  }
+}
+.bg-twinkle {
+  animation: bg-twinkle var(--bgp, 3s) ease-in-out var(--bgd, 0s) infinite;
+}
+@keyframes bg-twinkle {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.3);
+  }
+}
+.bg-spark {
+  animation: bg-spark var(--bgp, 3s) ease-in-out var(--bgd, 0s) infinite;
+}
+@keyframes bg-spark {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.3);
+  }
+}
+.bg-spin {
+  transform: translate(-50%, -50%) rotate(var(--bgr, 0deg));
+  will-change: transform;
+  animation: bg-spin var(--bgp, 60s) linear infinite;
+}
+@keyframes bg-spin {
+  from {
+    transform: translate(-50%, -50%) rotate(var(--bgr, 0deg));
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(calc(var(--bgr, 0deg) + 360deg));
+  }
+}
+.bg-orbit {
+  animation: bg-orbit var(--bgp, 18s) linear infinite;
+}
+@keyframes bg-orbit {
+  0%,
+  100% {
+    translate: calc(var(--rx) * -1) 0;
+  }
+  50% {
+    translate: var(--rx) calc(var(--rx) * -0.4);
+  }
+}
+.bg-cursor {
+  will-change: transform;
+  transform: translate(22vw, 28vh);
+  animation: bg-cursor 28s ease-in-out infinite;
+}
+@keyframes bg-cursor {
+  0%,
+  100% {
+    transform: translate(22vw, 28vh);
+  }
+  33% {
+    transform: translate(68vw, 42vh);
+  }
+  66% {
+    transform: translate(48vw, 62vh);
+  }
+}
+
+/* ---- dekorasi tambahan: semuanya transform/opacity ---- */
+.bg-aurora {
+  will-change: transform, opacity;
+  transform: rotate(var(--bgr, 0deg));
+  animation: bg-aurora var(--bgp, 28s) ease-in-out var(--bgd, 0s) infinite;
+}
+@keyframes bg-aurora {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--bgr, 0deg)) scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translate3d(8vw, -4vh, 0) rotate(calc(var(--bgr, 0deg) + 5deg))
+      scale(1.12);
+    opacity: 1;
+  }
+}
+.bg-wave {
+  will-change: transform;
+  animation: bg-wave var(--bgp, 30s) linear infinite;
+}
+.bg-wave--rev {
+  animation-direction: reverse;
+}
+@keyframes bg-wave {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.bg-float {
+  animation: bg-float var(--bgp, 12s) ease-in-out var(--bgd, 0s) infinite;
+}
+@keyframes bg-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-8deg);
+  }
+  50% {
+    transform: translateY(-18px) rotate(10deg);
+  }
+}
+.bg-tumble {
+  animation: bg-tumble var(--bgp, 30s) linear var(--bgd, 0s) infinite;
+}
+@keyframes bg-tumble {
+  from {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.12);
+  }
+  to {
+    transform: rotate(360deg) scale(1);
+  }
+}
+.bg-rain {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 35%, #000 60%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 35%, #000 60%, transparent);
+  animation: bg-rain var(--bgp, 14s) linear var(--bgd, 0s) infinite;
+}
+@keyframes bg-rain {
+  from {
+    transform: translateY(-120%);
+  }
+  to {
+    transform: translateY(110vh);
+  }
+}
+.bg-bokeh {
+  opacity: 0.35;
+  animation: bg-bokeh var(--bgp, 16s) ease-in-out var(--bgd, 0s) infinite;
+}
+@keyframes bg-bokeh {
+  0% {
+    transform: translateY(0) scale(0.85);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.7;
+  }
+  85% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateY(-62vh) scale(1.15);
+    opacity: 0;
+  }
+}
+.bg-shoot {
+  opacity: 0;
+  transform: rotate(28deg);
+  animation: bg-shoot var(--bgp, 10s) ease-out var(--bgd, 0s) infinite;
+}
+@keyframes bg-shoot {
+  0% {
+    transform: rotate(28deg) translateX(0);
+    opacity: 0;
+  }
+  3% {
+    opacity: 1;
+  }
+  14% {
+    transform: rotate(28deg) translateX(42vw);
+    opacity: 0;
+  }
+  100% {
+    transform: rotate(28deg) translateX(42vw);
+    opacity: 0;
+  }
+}
+.bg-spin--rev {
+  animation-direction: reverse;
+}
+
+/* ==================================================================
+ * MODE RINGAN (data-perf="low") — untuk PC/laptop lama.
+ * Hasil tetap sama secara garis besar: baris & kata masih masuk/keluar
+ * dan tersorot, tetapi tanpa blur, tanpa gerak idle tak berujung,
+ * tanpa condong 3D & backdrop-blur.
+ * ================================================================== */
+[data-perf="low"] .kl-idle,
+[data-perf="low"] .kl-drift,
+[data-perf="low"] .kword,
+[data-perf="low"] .svgi-idle,
+[data-perf="low"] .svgi-svg,
+[data-perf="low"] .svgi-stroke,
+[data-perf="low"] .bgfx {
+  animation: none !important;
+}
+[data-perf="low"] .kl-tilt {
+  transform: none;
+  will-change: auto;
+}
+[data-perf="low"] .kw {
+  animation: none;
+}
+[data-perf="low"] .kl-layer[data-phase="enter"][data-preset="blur-fade"] .kl-anim {
+  animation-name: kl-in-zoomin;
+}
+[data-perf="low"] .kl-layer[data-phase="leave"][data-preset="zoom-out"] .kl-anim,
+[data-perf="low"] .kl-layer[data-phase="leave"][data-preset="blur-fade"] .kl-anim {
+  animation-name: kl-out-zoomin;
+}
+[data-perf="low"] .kword {
+  transition: color 0.2s ease;
+}
+[data-perf="low"] .kword.is-active {
+  transform: none;
+  text-shadow: none;
+}
+[data-perf="low"] .kword.is-plain {
+  text-shadow: none;
+}
+[data-perf="low"] .svgi--outline .svgi-svg,
+[data-perf="low"] .svgi--fill .svgi-svg {
+  filter: drop-shadow(0 0 4px var(--ic));
+}
+[data-perf="low"] .perf-glass {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(22, 22, 34, 0.92) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kl-idle,
+  .kl-drift,
+  .kword,
+  .svgi-idle,
+  .svgi-svg,
+  .svgi-stroke,
+  .bgfx {
+    animation: none !important;
+  }
+  .kl-tilt {
+    transform: none;
+  }
+  .svgi-pop,
+  .svgi-s,
+  .svgi-fill {
+    transition-duration: 0.2s !important;
+    transition-delay: 0s !important;
+  }
+}
