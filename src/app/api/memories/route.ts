@@ -4,8 +4,7 @@
  * - POST : buat entri baru (admin) — multipart/form-data (audio file opsional)
  * ------------------------------------------------------------------ */
 import { NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
-import path from "node:path";
+import { put } from "@vercel/blob";
 import { db } from "@/lib/db";
 import {
   memoryFromDb,
@@ -16,8 +15,6 @@ import { validateSvgIcons } from "@/lib/svg";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const AUDIO_DIR = path.join(process.cwd(), "public", "audio");
 
 function slugify(input: string): string {
   return input
@@ -37,12 +34,13 @@ async function saveAudioFile(
   slug: string,
 ): Promise<string | null> {
   if (!file || file.size === 0) return null;
-  await fs.mkdir(AUDIO_DIR, { recursive: true });
   const ext = file.name.split(".").pop()?.toLowerCase() || "mp3";
-  const filename = `${slug}-${Date.now()}.${ext}`;
-  const buf = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(path.join(AUDIO_DIR, filename), buf);
-  return `/audio/${filename}`;
+  const filename = `audio/${slug}-${Date.now()}.${ext}`;
+  const blob = await put(filename, file, {
+    access: "public",
+    addRandomSuffix: true,
+  });
+  return blob.url;
 }
 
 /** Ambil field string dari FormData. */

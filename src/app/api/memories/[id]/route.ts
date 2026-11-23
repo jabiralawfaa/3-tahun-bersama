@@ -4,8 +4,7 @@
  * - DELETE : hapus entri (admin)
  * ------------------------------------------------------------------ */
 import { NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
-import path from "node:path";
+import { put, del } from "@vercel/blob";
 import { db } from "@/lib/db";
 import {
   memoryFromDb,
@@ -16,8 +15,6 @@ import { validateSvgIcons } from "@/lib/svg";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const AUDIO_DIR = path.join(process.cwd(), "public", "audio");
 
 function slugify(input: string): string {
   return input
@@ -33,12 +30,13 @@ function isValidHex(hex: string): boolean {
 }
 
 async function saveAudioFile(file: File, slug: string): Promise<string> {
-  await fs.mkdir(AUDIO_DIR, { recursive: true });
   const ext = file.name.split(".").pop()?.toLowerCase() || "mp3";
-  const filename = `${slug}-${Date.now()}.${ext}`;
-  const buf = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(path.join(AUDIO_DIR, filename), buf);
-  return `/audio/${filename}`;
+  const filename = `audio/${slug}-${Date.now()}.${ext}`;
+  const blob = await put(filename, file, {
+    access: "public",
+    addRandomSuffix: true,
+  });
+  return blob.url;
 }
 
 function fstr(form: FormData, key: string, fallback = ""): string {
@@ -129,6 +127,14 @@ export async function PUT(
   let audioSrc = fstr(form, "audioSrc", existing.audioSrc);
   const audioFile = form.get("audioFile");
   if (audioFile instanceof File && audioFile.size > 0) {
+    // Hapus file lama jika pakai Vercel Blob (URL mengandung blob.vercel-storage.com)
+    if (existing.audioSrc?.includes("blob.vercel-storage.com")) {
+      try {
+        await del(existing.audioSrc);
+      } catch {
+        /* ignore */
+      }
+    }
     audioSrc = await saveAudioFile(audioFile, slug);
   }
 
@@ -209,10 +215,10 @@ export async function DELETE(
   if (!existing) {
     return NextResponse.json({ error: "Entri tidak ditemukan" }, { status: 404 });
   }
-  // Hapus file audio terkait (best-effort).
-  if (existing.audioSrc?.startsWith("/audio/")) {
+  // Hapus file audio terkait (best-effort) jika pakai Vercel Blob.
+  if (existing.audioSrc?.includes("blob.vercel-storage.com")) {
     try {
-      await fs.unlink(path.join(process.cwd(), "public", existing.audioSrc));
+      await del(existing.audioSrc);
     } catch {
       /* ignore */
     }
