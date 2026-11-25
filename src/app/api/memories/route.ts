@@ -34,6 +34,7 @@ async function saveAudioFile(
   slug: string,
 ): Promise<string | null> {
   if (!file || file.size === 0) return null;
+  // Support MP3, WebM/Opus, and other audio formats
   const ext = file.name.split(".").pop()?.toLowerCase() || "mp3";
   const filename = `audio/${slug}-${Date.now()}.${ext}`;
   const blob = await put(filename, file, {

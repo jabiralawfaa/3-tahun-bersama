@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -33,41 +27,41 @@ model Post {
 
 /// Arsip kenangan kelulusan — satu entri per orang (kode nama).
 model Memory {
-  id           String   @id @default(cuid())
+  id              String   @id @default(cuid())
   /// Kode nama rahasia (diketik di gerbang)
-  code         String   @unique
+  code            String   @unique
   /// URL slug untuk /for/[slug]
-  slug         String   @unique
-  name         String
-  role         String   @default("Teman Kelas")
-  themeLabel   String   @default("Interactive Design Canvas & Editorial Motion")
+  slug            String   @unique
+  name            String
+  role            String   @default("Teman Kelas")
+  themeLabel      String   @default("Interactive Design Canvas & Editorial Motion")
   /// Warna aksen utama (hex, mis. #e8a23d) — per orang
-  accent       String   @default("#e8a23d")
+  accent          String   @default("#e8a23d")
   /// Warna aksen sekunder (hex)
-  accentSoft   String   @default("#d96a4f")
+  accentSoft      String   @default("#d96a4f")
   /// Warna latar canvas (hex)
-  background   String   @default("#13131f")
+  background      String   @default("#13131f")
   /// Jenis dekorasi SVG: bezier | constellation | orbit
-  decoration   String   @default("bezier")
+  decoration      String   @default("bezier")
   /// Path file audio (relatif /public, mis. /audio/starla.mp3)
-  audioSrc     String
-  songTitle    String
-  songArtist   String
+  audioSrc        String
+  songTitle       String
+  songArtist      String
   /// String format Enhanced LRC (mode "lrc"). Kosong jika mode "plain".
-  enhancedLrc  String   @default("")
+  enhancedLrc     String   @default("")
   /// JSON string[] — ucapan per baris (mode "plain", tanpa LRC).
   /// Durasi lagu dibagi rata sesuai jumlah baris.
-  plainLines   String   @default("[]")
+  plainLines      String   @default("[]")
   /// JSON string LineConfig[] (refleksi + preset animasi per baris)
-  lineConfig   String   @default("[]")
+  lineConfig      String   @default("[]")
   /// JSON string SvgIcon[] — pustaka ikon SVG animasi. Tiap baris lirik
   /// memakai satu ikon (bergantian kiri/kanan); mode "outline" | "fill".
-  svgIcons     String   @default("[]")
+  svgIcons        String   @default("[]")
   /// Tata letak ikon mode ucapan biasa: "crowd" (ramai) | "single" (individual)
-  iconLayout   String   @default("crowd")
+  iconLayout      String   @default("crowd")
   /// Pesan penutup saat lagu selesai
-  finalMessage String
-  finalFrameLabel String @default("Final_Confession.tsx")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  finalMessage    String
+  finalFrameLabel String   @default("Final_Confession.tsx")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

@@ -8,6 +8,13 @@ import {
   type ParsedLrcLine,
 } from "@/lib/lrc";
 import {
+  compressAudio,
+  validateAudioSize,
+  formatBytes,
+  formatDuration,
+  type CompressionResult,
+} from "@/lib/audio";
+import {
   ANIMATION_PRESETS,
   DECORATION_INFO,
   DECORATION_KINDS,
@@ -81,6 +88,8 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
       : {}),
   }));
   const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [compressedAudio, setCompressedAudio] = useState<CompressionResult | null>(null);
+  const [showCompressionWarning, setShowCompressionWarning] = useState(false);
   const [lrcFileName, setLrcFileName] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -196,8 +205,34 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
     [],
   );
 
-  const handleAudioFile = (file: File | null) => {
+  const handleAudioFile = async (file: File | null) => {
+    if (!file) {
+      setAudioFile(null);
+      setCompressedAudio(null);
+      setShowCompressionWarning(false);
+      return;
+    }
+
+    // Validate size first
+    const sizeError = validateAudioSize(file);
     setAudioFile(file);
+
+    // Always try to compress for consistency
+    try {
+      const result = await compressAudio(file);
+      setCompressedAudio(result);
+      
+      // If still too large after compression, show warning
+      if (result.compressedSize > 3 * 1024 * 1024) {
+        setShowCompressionWarning(true);
+      } else {
+        setShowCompressionWarning(false);
+      }
+    } catch (err) {
+      console.error("Compression failed:", err);
+      setCompressedAudio(null);
+      if (sizeError) setShowCompressionWarning(true);
+    }
   };
 
   const handleLrcFile = async (file: File | null) => {
@@ -260,8 +295,10 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
     fd.append("iconLayout", iconLayout);
     fd.append("finalMessage", form.finalMessage);
     fd.append("finalFrameLabel", form.finalFrameLabel);
-    if (existingAudio) fd.append("audioSrc", existingAudio);
-    if (audioFile) fd.append("audioFile", audioFile);
+    // Use compressed audio if available, otherwise original
+    const finalAudioFile = compressedAudio?.compressed ? new File([compressedAudio.blob], audioFile?.name || "audio.webm", { type: "audio/webm" }) : audioFile;
+    if (existingAudio && !finalAudioFile) fd.append("audioSrc", existingAudio);
+    if (finalAudioFile) fd.append("audioFile", finalAudioFile);
 
     setSaving(true);
     try {
@@ -365,7 +402,7 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                 <input
                   ref={audioInputRef}
                   type="file"
-                  accept="audio/mpeg,audio/mp3,.mp3"
+                  accept="audio/mpeg,audio/mp3,.mp3,audio/webm,.webm,audio/ogg,.ogg"
                   onChange={(e) => handleAudioFile(e.target.files?.[0] ?? null)}
                   className="hidden"
                 />
@@ -395,6 +432,61 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                 )}
               </div>
             </Field>
+            {/* Compression info / warning */}
+            {(compressedAudio || showCompressionWarning) && (
+              <div className="mt-3 p-3 rounded-lg border bg-white/[0.02] animate-in slide-in-from-top-2 duration-200">
+                {showCompressionWarning ? (
+                  <div className="flex items-start gap-2 text-rose-warm">
+                    <span className="shrink-0 mt-0.5" style={{ fontSize: "14px" }}>⚠</span>
+                    <div>
+                      <p className="font-mono text-[11px] uppercase tracking-wider">
+                        File audio terlalu besar untuk Vercel (maks 3 MB)
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Setelah kompresi: <strong>{compressedAudio ? formatBytes(compressedAudio.compressedSize) : "tidak diketahui"}</strong>
+                        {compressedAudio && compressedAudio.compressed && (
+                          <>
+                            {" (dari " + formatBytes(compressedAudio.originalSize) + ", "}
+                            {Math.round((1 - compressedAudio.ratio) * 100)}% lebih kecil)
+                          </>
+                        )}
+                        . Durasi: {compressedAudio ? formatDuration(compressedAudio.duration) : "?"}
+                      </p>
+                      <p className="mt-2 text-xs text-amber-warm/80">
+                        Solusi: Potong durasi lagu (mis. hanya chorus), atau pilih file MP3 yang sudah
+                        dikompres (bitrate ≤ 128 kbps, mono). Gunakan tool seperti Audacity / online
+                        audio compressor.
+                      </p>
+                    </div>
+                  </div>
+                ) : compressedAudio?.compressed ? (
+                  <div className="flex items-center gap-2 text-emerald-400">
+                    <span className="shrink-0" style={{ fontSize: "14px" }}>✓</span>
+                    <div>
+                      <p className="font-mono text-[11px] uppercase tracking-wider">
+                        Audio dikompresi otomatis
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatBytes(compressedAudio.originalSize)} →{" "}
+                        <strong>{formatBytes(compressedAudio.compressedSize)}</strong>
+                        ({Math.round((1 - compressedAudio.ratio) * 100)}% lebih kecil, "
+                        {formatDuration(compressedAudio.duration)})
+                        . Format: WebM/Opus (didukung browser modern).
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-amber-warm/80">
+                    <span className="shrink-0" style={{ fontSize: "14px" }}>ℹ</span>
+                    <p className="text-xs text-muted-foreground">
+                      File audio dalam batas ukuran ({formatBytes(audioFile?.size ?? 0)}). Tidak perlu
+                      kompresi.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
           </Section>
 
           {/* Section: Lirik / Ucapan */}
