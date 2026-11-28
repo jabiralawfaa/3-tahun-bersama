@@ -67,6 +67,8 @@ export default function PersonalPage() {
   // Memory di-fetch dari API (DB). Loading state sampai tersedia.
   const [memory, setMemory] = useState<Memory | null>(null);
   const [loadingMemory, setLoadingMemory] = useState(true);
+  // Foto pustaka Media untuk mode ramai (dikirim bersama data arsip).
+  const [crowdPhotos, setCrowdPhotos] = useState<string[]>([]);
 
   /* ------------------- Audio engine state ------------------- */
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -151,6 +153,11 @@ export default function PersonalPage() {
         if (cancelled) return;
         if (data?.memory) {
           setMemory(data.memory);
+          setCrowdPhotos(
+            Array.isArray(data.crowdPhotos)
+              ? data.crowdPhotos.filter((u: unknown) => typeof u === "string")
+              : [],
+          );
         } else {
           // Tidak ditemukan → kembali ke gerbang.
           router.replace("/");
@@ -401,7 +408,7 @@ export default function PersonalPage() {
                 </p>
                 <h1 className="mt-4 font-sans text-3xl sm:text-4xl font-semibold leading-tight tracking-tight">
                   Sebuah surat, tersembunyi{" "}
-                  <span className="text-warm-gradient">selama 3 tahun.</span>
+                  <span className="text-warm-gradient">selama ini.</span>
                 </h1>
                 <p className="mt-4 text-sm text-muted-foreground">
                   Putar lagunya, dan biarkan setiap baris membuka apa yang
@@ -429,6 +436,7 @@ export default function PersonalPage() {
             mode={getMode(memory)}
             icons={memory.svgIcons}
             iconLayout={memory.iconLayout}
+            photos={crowdPhotos}
           />
         </div>
       </div>

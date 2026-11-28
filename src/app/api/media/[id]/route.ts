@@ -1,7 +1,8 @@
 /**
  * /api/media/[id]  (admin)
  * - PUT    : ubah nama gambar  { name }
- * - DELETE : hapus gambar (ditolak bila masih dipakai entri)
+ * - DELETE : hapus gambar. Tanpa ?force=1 ditolak bila masih dipakai entri;
+ *            dengan ?force=1 gambar dilepas dulu dari baris yang memakainya.
  * ------------------------------------------------------------------ */
 import { NextResponse } from "next/server";
 import { del } from "@vercel/blob";
@@ -35,7 +36,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -44,21 +45,47 @@ export async function DELETE(
     return NextResponse.json({ error: "Gambar tidak ditemukan" }, { status: 404 });
   }
 
-  // Tolak bila masih dipakai entri mana pun (agar halaman publik tak rusak).
+  // Cari entri yang masih memakai gambar ini.
   const rows = await db.memory.findMany({
-    select: { name: true, lineConfig: true },
+    select: { id: true, name: true, lineConfig: true },
   });
-  const users = rows
-    .filter((r) => r.lineConfig.includes(existing.id) || r.lineConfig.includes(existing.url))
-    .map((r) => r.name);
-  if (users.length) {
+  const users = rows.filter(
+    (r) => r.lineConfig.includes(existing.id) || r.lineConfig.includes(existing.url),
+  );
+  const force = new URL(req.url).searchParams.get("force") === "1";
+  if (users.length && !force) {
     return NextResponse.json(
       {
-        error: `Gambar masih dipakai oleh: ${users.join(", ")}. Lepas dulu dari refleksi barisnya.`,
-        usedBy: users,
+        error: `Gambar masih dipakai oleh: ${users.map((r) => r.name).join(", ")}. Hapus tetap akan melepasnya dari baris tersebut.`,
+        usedBy: users.map((r) => r.name),
       },
       { status: 409 },
     );
+  }
+
+  // Hapus paksa: lepas referensi gambar dari lineConfig entri terkait agar
+  // halaman publik tidak memuat URL yang sudah hilang.
+  for (const row of users) {
+    let config: unknown;
+    try {
+      config = JSON.parse(row.lineConfig);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(config)) continue;
+    const next = config.map((c) => {
+      if (!c || typeof c !== "object") return c;
+      const line = { ...(c as Record<string, unknown>) };
+      if (line.imageId === existing.id || line.imageUrl === existing.url) {
+        delete line.imageId;
+        delete line.imageUrl;
+      }
+      return line;
+    });
+    await db.memory.update({
+      where: { id: row.id },
+      data: { lineConfig: JSON.stringify(next) },
+    });
   }
 
   try {
@@ -67,5 +94,8 @@ export async function DELETE(
     console.error("media blob delete", e); // tetap hapus baris DB
   }
   await db.media.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    detached: users.map((r) => r.name),
+  });
 }

@@ -40,6 +40,9 @@ import { LineImage } from "@/components/media/LineImage";
  *  - Mode tanpa LRC (ucapan biasa): ikon tampil "ramai" (3–5 ikon kecil
  *    mengisi ruang kosong di sekitar ucapan) atau "individual" (satu ikon
  *    besar di atas ucapan). Teks tetap di tengah.
+ *  - Gambar dari pustaka Media menempati slot ikon barisnya: kolom ikon di
+ *    mode LRC, satu slot pada tata letak ramai, atau visual besar pada
+ *    tata letak individual.
  *  - Mode ringan (data-perf="low" di <main>) mematikan gerak idle,
  *    blur, dan condong 3D — lihat globals.css.
  * ------------------------------------------------------------------ */
@@ -55,6 +58,8 @@ interface KineticLyricsProps {
   icons?: SvgIcon[];
   /** Tata letak ikon pada mode ucapan biasa: ramai / individual. */
   iconLayout?: IconLayout;
+  /** URL foto pustaka Media; mode ramai memakainya sebagai visual acak. */
+  photos?: string[];
 }
 
 /** Ikon mengisi separuh kolomnya, dibatasi agar tidak melebihi tinggi layar. */
@@ -72,6 +77,7 @@ export const KineticLyrics = memo(function KineticLyrics({
   mode = "lrc",
   icons = [],
   iconLayout = "crowd",
+  photos = [],
 }: KineticLyricsProps) {
   const activeLine = activeIndex >= 0 ? lines[activeIndex] : undefined;
 
@@ -133,6 +139,9 @@ export const KineticLyrics = memo(function KineticLyrics({
     ? resolveLineIcon(activeLine.index, activeLine.iconId, icons)
     : null;
   const activeImage = activeLine?.imageUrl ?? null;
+  const crowdPhotosShown =
+    photos.length > 0 &&
+    (mode === "plain" ? iconLayout === "crowd" : !!activeLine?.crowd);
 
   return (
     <div
@@ -147,15 +156,17 @@ export const KineticLyrics = memo(function KineticLyrics({
         <span>{mode === "plain" ? "spoken" : "kinetic-lyrics"}</span>
         <span className="opacity-40">·</span>
         <span className="text-amber-warm/70">{preset}</span>
-        {(activeImage || activeIcon) && (
+        {(crowdPhotosShown || activeImage || activeIcon) && (
           <>
             <span className="opacity-40">·</span>
             <span className="text-amber-warm/70">
-              {activeImage
-                ? "image"
-                : activeIcon?.mode === "fill"
-                  ? "icon:fill"
-                  : "icon:neon"}
+              {crowdPhotosShown
+                ? "photos"
+                : activeImage
+                  ? "image"
+                  : activeIcon?.mode === "fill"
+                    ? "icon:fill"
+                    : "icon:neon"}
             </span>
           </>
         )}
@@ -180,6 +191,7 @@ export const KineticLyrics = memo(function KineticLyrics({
                 icons,
               )}
               image={leavingLine.imageUrl ?? null}
+              photos={photos}
               prevText={lines[leavingLine.index - 1]?.text}
               nextText={lines[leavingLine.index + 1]?.text}
             />
@@ -196,6 +208,7 @@ export const KineticLyrics = memo(function KineticLyrics({
               icons={icons}
               icon={activeIcon}
               image={activeImage}
+              photos={photos}
               prevText={lines[activeLine.index - 1]?.text}
               nextText={lines[activeLine.index + 1]?.text}
             />
@@ -223,6 +236,8 @@ interface LayerProps {
   icon: SvgIcon | null;
   /** URL gambar dari pustaka Media; bila ada menggantikan ikon SVG. */
   image: string | null;
+  /** Foto pustaka Media untuk mengisi slot mode ramai. */
+  photos: string[];
   prevText?: string;
   nextText?: string;
 }
@@ -237,6 +252,7 @@ const Layer = memo(function Layer({
   icons,
   icon,
   image,
+  photos,
   prevText,
   nextText,
 }: LayerProps) {
@@ -259,6 +275,7 @@ const Layer = memo(function Layer({
         icons={icons}
         icon={icon}
         image={image}
+        photos={photos}
         side={side}
         driftSeconds={driftSeconds}
         lrc
@@ -277,6 +294,7 @@ const Layer = memo(function Layer({
         icons={icons}
         icon={icon}
         image={image}
+        photos={photos}
         side={side}
         driftSeconds={driftSeconds}
       />
@@ -418,20 +436,27 @@ function PlainWords({ text }: { text: string }) {
 /** Slot di sekeliling area teks (persen dari panggung). `mid` = sisi
  *  tengah yang bisa menabrak teks di layar sempit → disembunyikan di HP. */
 const CROWD_SLOTS: { x: number; y: number; mid?: boolean }[] = [
-  { x: 7, y: 15 },
-  { x: 93, y: 13 },
+  { x: 7, y: 17 },
+  { x: 93, y: 15 },
   { x: 4, y: 50, mid: true },
   { x: 96, y: 52, mid: true },
-  { x: 10, y: 85 },
-  { x: 90, y: 87 },
-  { x: 30, y: 6 },
-  { x: 70, y: 7 },
-  { x: 29, y: 94 },
-  { x: 71, y: 93 },
+  { x: 10, y: 82 },
+  { x: 90, y: 84 },
+  { x: 30, y: 10 },
+  { x: 70, y: 11 },
+  { x: 29, y: 90 },
+  { x: 71, y: 89 },
 ];
 
+/** Slot untuk foto mode ramai: tanpa slot tengah agar kelima foto tetap
+ *  terlihat di layar HP (slot mid disembunyikan pada layar sempit). */
+const PHOTO_SLOTS = CROWD_SLOTS.filter((s) => !s.mid);
+
 interface CrowdItem {
-  icon: SvgIcon;
+  /** Ikon SVG; kosong bila slot diisi gambar. */
+  icon?: SvgIcon;
+  /** Gambar pustaka Media yang menggantikan ikon di slot ini. */
+  image?: string;
   x: number;
   y: number;
   mid: boolean;
@@ -441,25 +466,69 @@ interface CrowdItem {
   delay: number;
 }
 
-/** Pilih 3–5 ikon + slotnya secara deterministik per baris. */
+/** Urutan acak yang stabil per baris (tidak berubah saat kata di-highlight). */
+function seededOrder(index: number, count: number, total: number): number[] {
+  let seed = ((index + 1) * 0x9e3779b1) >>> 0;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  const order = Array.from({ length: total }, (_, i) => i);
+  for (let i = total - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order.slice(0, count);
+}
+
+/**
+ * Pilih 3–5 visual + slotnya secara deterministik per baris.
+ * Bila pustaka foto tersedia, mode ramai dipenuhi foto acak (gambar pilihan
+ * baris selalu di slot pertama) agar terasa ramai. Tanpa foto, ikon SVG
+ * dipakai seperti sebelumnya.
+ */
 function pickCrowd(
   index: number,
   icons: SvgIcon[],
   forced: SvgIcon[],
+  image: string | null,
+  photos: string[],
 ): CrowdItem[] {
-  if (!icons.length) return [];
-  // Pilihan manual: pakai ikon pilihan (diulang bila < 3), selebihnya otomatis.
-  const count = forced.length
-    ? Math.min(5, Math.max(3, forced.length))
-    : 3 + (index % 3);
-  const start = (index * 3) % CROWD_SLOTS.length;
-  const items: CrowdItem[] = [];
-  for (let k = 0; k < count; k++) {
-    const slot = CROWD_SLOTS[(start + k * 3) % CROWD_SLOTS.length];
-    items.push({
+  const pool = image ? [image, ...photos.filter((p) => p !== image)] : photos;
+  let visuals: Pick<CrowdItem, "icon" | "image">[];
+  let slots = CROWD_SLOTS;
+
+  if (pool.length) {
+    // Mode ramai selalu menampilkan 5 foto; foto diulang bila pustaka lebih
+    // sedikit. Slot tengah dilewati agar kelimanya tetap tampil di layar HP.
+    const picked = seededOrder(
+      index,
+      Math.min(5, pool.length),
+      pool.length,
+    ).map((i) => pool[i]);
+    visuals = Array.from({ length: 5 }, (_, k) => ({
+      image: picked[k % picked.length],
+    }));
+    slots = PHOTO_SLOTS;
+  } else if (icons.length) {
+    // Pilihan manual: pakai ikon pilihan (diulang bila < 3), selebihnya otomatis.
+    const count = forced.length
+      ? Math.min(5, Math.max(3, forced.length))
+      : 3 + (index % 3);
+    visuals = Array.from({ length: count }, (_, k) => ({
       icon: forced.length
         ? forced[k % forced.length]
         : icons[(index + k) % icons.length],
+    }));
+  } else {
+    return [];
+  }
+
+  const start = (index * 3) % slots.length;
+  return visuals.map((v, k) => {
+    const slot = slots[(start + k * 3) % slots.length];
+    return {
+      ...v,
       x: slot.x,
       y: slot.y,
       mid: !!slot.mid,
@@ -467,9 +536,8 @@ function pickCrowd(
       rot: (((index + k * 7) % 9) - 4) * 6,
       side: slot.x < 50 ? "left" : "right",
       delay: 150 + k * 140,
-    });
-  }
-  return items;
+    };
+  });
 }
 
 function PlainLayer({
@@ -480,6 +548,7 @@ function PlainLayer({
   icons,
   icon,
   image,
+  photos,
   side,
   driftSeconds,
   lrc = false,
@@ -492,6 +561,8 @@ function PlainLayer({
   icons: SvgIcon[];
   icon: SvgIcon | null;
   image: string | null;
+  /** Foto pustaka Media untuk mode ramai. */
+  photos: string[];
   side: Side;
   driftSeconds: number;
   /** true = baris mode LRC bergaya ramai (highlight per kata tetap jalan). */
@@ -501,21 +572,25 @@ function PlainLayer({
   const preset = line.animationPreset;
   const iconPhase = phase === "enter" ? "in" : "out";
   const none = line.iconId === ICON_NONE;
-  // Gambar selalu tampil sebagai "hero" di atas ucapan (ucapan ikut turun).
-  const single = !!image || (layout === "single" && !!icon);
+  // Individual: satu visual besar di atas ucapan (gambar menggantikan ikon).
+  // Ramai: visual kecil di sekeliling teks, jadi tidak ada hero di atas.
+  const single = layout === "single" && (!!image || (!!icon && !none));
 
+  // pickCrowd sendiri mengembalikan [] bila tak ada foto maupun ikon.
   const crowd = useMemo(
     () =>
-      layout === "crowd" && !none
+      layout === "crowd"
         ? pickCrowd(
             line.index,
             icons,
             (line.iconIds?.length ? line.iconIds : line.iconId ? [line.iconId] : [])
               .map((id) => icons.find((i) => i.id === id))
               .filter((i): i is SvgIcon => !!i),
+            image,
+            photos,
           )
         : [],
-    [layout, none, line.index, line.iconId, line.iconIds, icons],
+    [layout, line.index, line.iconId, line.iconIds, icons, image, photos],
   );
 
   const textSize =
@@ -538,7 +613,9 @@ function PlainLayer({
           {crowd.map((c, k) => (
             <div
               key={k}
-              className={`kl-crowd-item ${c.mid ? "kl-crowd-item--mid" : ""}`}
+              className={`kl-crowd-item ${c.mid ? "kl-crowd-item--mid" : ""} ${
+                c.image ? "kl-crowd-item--img" : ""
+              }`}
               style={
                 {
                   left: `${c.x}%`,
@@ -548,19 +625,28 @@ function PlainLayer({
                 } as CSSProperties
               }
             >
-              <AnimatedSvgIcon
-                icon={c.icon}
-                side={c.side}
-                size="100%"
-                phase={iconPhase}
-                delay={c.delay}
-              />
+              {c.image ? (
+                <LineImage
+                  src={c.image}
+                  side={c.side}
+                  variant="crowd"
+                  phase={iconPhase}
+                />
+              ) : c.icon ? (
+                <AnimatedSvgIcon
+                  icon={c.icon}
+                  side={c.side}
+                  size="100%"
+                  phase={iconPhase}
+                  delay={c.delay}
+                />
+              ) : null}
             </div>
           ))}
         </div>
       )}
 
-      {/* Individual: satu ikon lebih besar di atas ucapan */}
+      {/* Individual: satu ikon/gambar lebih besar di atas ucapan */}
       {single && (image || icon) && (
         <div className="kl-single-icon">
           {image ? (

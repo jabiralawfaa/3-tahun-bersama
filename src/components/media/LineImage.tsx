@@ -14,8 +14,9 @@ interface LineImageProps {
   src: string;
   side?: "left" | "right";
   phase?: "in" | "out";
-  /** "cell" = kolom ikon mode LRC; "hero" = di atas ucapan (mode biasa). */
-  variant?: "cell" | "hero";
+  /** "cell" = kolom ikon mode LRC; "hero" = di atas ucapan (mode individual);
+   *  "crowd" = slot ikon kecil di sekeliling teks (mode ramai). */
+  variant?: "cell" | "hero" | "crowd";
   alt?: string;
 }
 

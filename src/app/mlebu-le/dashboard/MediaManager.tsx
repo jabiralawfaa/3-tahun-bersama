@@ -157,8 +157,27 @@ export function MediaManager({ onClose }: { onClose: () => void }) {
     setError("");
     setDeleting(m.id);
     try {
-      const res = await fetch(`/api/media/${m.id}`, { method: "DELETE", credentials: "include" });
-      const data = await res.json().catch(() => ({}));
+      const del = (force: boolean) =>
+        fetch(`/api/media/${m.id}${force ? "?force=1" : ""}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+
+      let res = await del(false);
+      let data = await res.json().catch(() => ({}));
+
+      // Gambar masih dipakai baris entri lain: tawarkan hapus paksa yang
+      // sekaligus melepasnya dari baris-baris tersebut.
+      if (res.status === 409) {
+        const usedBy: string[] = Array.isArray(data.usedBy) ? data.usedBy : [];
+        const lanjut = window.confirm(
+          `Gambar "${m.name}" masih dipakai oleh: ${usedBy.join(", ") || "entri lain"}.\n\nHapus tetap? Gambar akan dilepas dari baris yang memakainya dan URL-nya tidak lagi tampil di halaman arsip.`,
+        );
+        if (!lanjut) return;
+        res = await del(true);
+        data = await res.json().catch(() => ({}));
+      }
+
       if (!res.ok) {
         setError(data.error || `Gagal menghapus: HTTP ${res.status} ${res.statusText}`);
         return;
@@ -196,7 +215,10 @@ export function MediaManager({ onClose }: { onClose: () => void }) {
             <p className="mt-1 text-xs text-muted-foreground">
               Unggah gambar di sini, lalu pilih per baris lewat dropdown
               &ldquo;gambar&rdquo; di bagian refleksi pada form arsip. Gambar
-              otomatis diperkecil (maks. 1600 px) agar ringan.
+              otomatis diperkecil (maks. 1600 px) agar ringan. Mode ramai
+              memakai foto acak dari pustaka ini. Hapus gambar lewat ikon
+              tempat sampah pada kartu — gambar yang masih dipakai baris akan
+              ditawari hapus paksa (referensinya dilepas otomatis).
             </p>
           </div>
           <button

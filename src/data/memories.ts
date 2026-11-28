@@ -68,8 +68,11 @@ export interface LineConfig {
    *  memakai yang pertama; mode Ramai memakai semuanya (maks. 5). */
   iconIds?: string[];
   /** Gambar dari pustaka Media (dipilih di dropdown per baris). Bila ada,
-   *  gambar tampil di slot ikon baris ini; imageUrl disalin saat memilih
-   *  agar halaman publik tidak butuh akses ke daftar Media. */
+   *  gambar MENGGANTIKAN slot ikon baris ini: kolom ikon pada mode LRC,
+   *  slot pertama pada tata letak Ramai, atau visual besar pada Individual.
+   *  Mode Ramai juga memakai foto acak lain dari Media, jadi tampilannya
+   *  ramai walau baris tidak punya gambar pilihan. imageUrl disalin saat
+   *  memilih agar halaman publik tidak butuh akses ke daftar Media. */
   imageId?: string;
   imageUrl?: string;
   /** Mode LRC saja: true = baris tampil "ramai" (3–5 ikon kecil di sekeliling

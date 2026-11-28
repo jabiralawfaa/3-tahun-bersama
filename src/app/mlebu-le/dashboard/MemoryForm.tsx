@@ -624,7 +624,11 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                 Mode <span className="text-amber-warm/80">Lirik (LRC)</span>:
                 ikon memakai grid 2 kolom (ikon separuh, teks separuh) dan
                 bergantian kiri/kanan. Pilihan <em>Ramai</em> / <em>Individual</em>{" "}
-                muncul saat memakai mode <em>Tulisan Biasa</em>.
+                muncul saat memakai mode <em>Tulisan Biasa</em>. Gambar dari{" "}
+                <span className="text-amber-warm/80">Media</span> menggantikan
+                ikon di slot baris yang sama, termasuk pada mode ramai
+                (gambar ikut di sekeliling teks) dan individual (gambar menjadi
+                visual besar di atas ucapan).
               </p>
             )}
             <SvgIconManager
@@ -650,7 +654,9 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                   ? "Teks refleksi/pengakuan pribadi yang muncul di bawah baris lirik saat diputar. Pilih preset animasi, ikon SVG, dan gambar per baris."
                   : "Pilih preset animasi, ikon SVG, dan gambar untuk tiap ucapan. Ucapan akan tampil sebagai hero utama (tanpa highlight per kata) bergantian selama durasi yang dibagi rata."}{" "}
                 Gambar diunggah lewat tombol <span className="text-amber-warm/80">Media</span>{" "}
-                di header dashboard; bila dipilih, gambar menggantikan ikon SVG baris itu.{" "}
+                di header dashboard. Bila dipilih, gambar menggantikan ikon SVG
+                baris itu; pada mode ramai gambar pilihan tampil bersama foto
+                acak dari Media, pada individual gambar menjadi visual besar.{" "}
                 <button
                   type="button"
                   onClick={loadMedia}
@@ -684,7 +690,7 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                                   crowd: lineConfig[i]?.crowd ? undefined : true,
                                 })
                               }
-                              title="Mode ramai: 3–5 ikon kecil di sekeliling lirik (tanpa refleksi)"
+                              title="Mode ramai: 3–5 visual kecil (ikon/gambar) di sekeliling lirik, tanpa refleksi"
                               className={`rounded border px-2 py-1 font-mono text-[11px] transition-colors ${
                                 lineConfig[i]?.crowd
                                   ? "border-amber-warm/60 bg-amber-warm/15 text-amber-warm"
@@ -694,21 +700,6 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                               ramai: {lineConfig[i]?.crowd ? "ya" : "tidak"}
                             </button>
                           )}
-                          <LineImageSelect
-                            media={media}
-                            state={mediaState}
-                            imageId={lineConfig[i]?.imageId}
-                            imageUrl={lineConfig[i]?.imageUrl}
-                            label={`Gambar baris ${i + 1}`}
-                            onChange={(m) =>
-                              patchLine(
-                                i,
-                                m
-                                  ? { imageId: m.id, imageUrl: m.url }
-                                  : { imageId: undefined, imageUrl: undefined },
-                              )
-                            }
-                          />
                           <select
                             className="rounded border border-white/10 bg-midnight px-2 py-1 text-[11px] font-mono text-foreground outline-none focus:border-amber-warm/40"
                             value={lineConfig[i]?.animationPreset ?? "blur-fade"}
@@ -727,6 +718,26 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                           </select>
                         </div>
                       </div>
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                          visual baris
+                        </span>
+                        <LineImageSelect
+                          media={media}
+                          state={mediaState}
+                          imageId={lineConfig[i]?.imageId}
+                          imageUrl={lineConfig[i]?.imageUrl}
+                          label={`Gambar baris ${i + 1}`}
+                          onChange={(m) =>
+                            patchLine(
+                              i,
+                              m
+                                ? { imageId: m.id, imageUrl: m.url }
+                                : { imageId: undefined, imageUrl: undefined },
+                            )
+                          }
+                        />
+                      </div>
                       {svgIcons.length > 0 && (
                         <LineIconPicker
                           icons={svgIcons}
@@ -734,6 +745,7 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                           iconIds={lineConfig[i]?.iconIds}
                           multi={(mode === "plain" && iconLayout === "crowd") || (mode === "lrc" && !!lineConfig[i]?.crowd)}
                           side={i % 2 === 0 ? "kiri" : "kanan"}
+                          replacedByImage={!!lineConfig[i]?.imageUrl}
                           onChange={(patch) => patchLine(i, patch)}
                         />
                       )}
@@ -1004,12 +1016,12 @@ function IconLayoutPicker({
     {
       v: "crowd",
       title: "Ramai",
-      desc: "3–5 ikon kecil muncul bersamaan mengisi ruang kosong di sekitar ucapan.",
+      desc: "3–5 foto acak dari Media mengisi ruang kosong di sekitar ucapan (memakai ikon SVG bila pustaka foto masih kosong).",
     },
     {
       v: "single",
       title: "Individual",
-      desc: "Satu ikon lebih besar di atas ucapan; ucapan turun sedikit menyesuaikan.",
+      desc: "Satu ikon atau gambar lebih besar di atas ucapan; ucapan turun sedikit menyesuaikan.",
     },
   ];
   return (
@@ -1093,6 +1105,7 @@ function LineIconPicker({
   iconIds,
   multi,
   side,
+  replacedByImage = false,
   onChange,
 }: {
   icons: SvgIcon[];
@@ -1101,12 +1114,25 @@ function LineIconPicker({
   /** true = mode Ramai: boleh pilih beberapa ikon (maks. 5). */
   multi: boolean;
   side: string;
+  /** Gambar baris ini dipilih → menggantikan slot ikon utama. */
+  replacedByImage?: boolean;
   onChange: (patch: Partial<LineConfig>) => void;
 }) {
   const none = iconId === ICON_NONE;
   const selected = (iconIds?.length ? iconIds : iconId && !none ? [iconId] : [])
     .filter((id) => icons.some((i) => i.id === id));
   const auto = !none && selected.length === 0;
+  const status = replacedByImage
+    ? multi
+      ? "mode ramai: gambar digabung foto acak Media"
+      : "tidak dipakai — diganti gambar"
+    : auto
+      ? `otomatis (sisi ${side})`
+      : none
+        ? "tanpa ikon"
+        : multi
+          ? `${selected.length} dipilih (maks. 5)`
+          : "dipilih manual";
 
   const setSel = (ids: string[]) =>
     onChange({ iconIds: ids.length ? ids : undefined, iconId: ids[0] });
@@ -1128,14 +1154,7 @@ function LineIconPicker({
   return (
     <div className="mb-2">
       <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">
-        Ikon baris ini ·{" "}
-        {auto
-          ? `otomatis (sisi ${side})`
-          : none
-            ? "tanpa ikon"
-            : multi
-              ? `${selected.length} dipilih (maks. 5)`
-              : "dipilih manual"}
+        Ikon baris ini · {status}
       </p>
       <div className="flex flex-wrap gap-1.5">
         <button
@@ -1245,7 +1264,7 @@ function LineImageSelect({
             ? "Gagal memuat daftar gambar"
             : media.length === 0 && state === "ok"
               ? "Belum ada gambar — unggah lewat menu Media"
-              : "Pilih gambar dari pustaka Media"
+              : "Pilih gambar dari Media — menggantikan ikon SVG baris ini"
         }
         onChange={(e) => {
           const m = media.find((x) => x.id === e.target.value) ?? null;
@@ -1257,7 +1276,7 @@ function LineImageSelect({
             ? "gambar: memuat…"
             : state === "error"
               ? "gambar: gagal memuat"
-              : "gambar: tanpa"}
+              : "gambar: tanpa (ikuti mode)"}
         </option>
         {orphan && (
           <option value={imageId}>
