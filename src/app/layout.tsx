@@ -23,7 +23,7 @@ const lora = Lora({
 });
 
 export const metadata: Metadata = {
-  title: "Arsip 3 Tahun — Kenangan Kelulusan",
+  title: "Ungkapan Selama Ini — Kenangan Kelulusan",
   description:
     "Sebuah arsip kenangan dan pengakuan perpisahan kelas, dirancang dengan estetika Figma Design Canvas dan kinetic typography.",
   keywords: [
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     "surat cinta untuk starla",
     "kinetic lyrics",
   ],
-  authors: [{ name: "Arsip 3 Tahun" }],
+  authors: [{ name: "Ungkapan Selama Ini" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },

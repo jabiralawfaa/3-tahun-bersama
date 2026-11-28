@@ -122,7 +122,7 @@ export function FinalConfession({
             animate={{ opacity: 1 }}
             transition={{ duration: 1, delay: 1.8 + phrases.length * 0.55 }}
           >
-            — ditulis dalam diam, selama tiga tahun penuh.
+            — ditulis dalam diam, ungkapan selama ini.
           </motion.p>
 
           {/* Tombol kecil Replay / Beranda */}

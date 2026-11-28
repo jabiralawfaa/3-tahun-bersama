@@ -99,7 +99,7 @@ export default function GatewayPage() {
       <header className="relative z-10 flex items-center justify-between px-5 sm:px-8 py-4 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
         <div className="flex items-center gap-2">
           <span className="inline-block h-2 w-2 rounded-full bg-amber-warm/80" />
-          <span>arsip-3-tahun</span>
+          <span>ungkapan-selama-ini</span>
           <span className="hidden sm:inline opacity-40">/</span>
           <span className="hidden sm:inline opacity-60">gateway.tsx</span>
         </div>
@@ -134,7 +134,7 @@ export default function GatewayPage() {
 
               <h1 className="font-sans text-3xl sm:text-5xl font-semibold leading-[1.05] tracking-tight text-foreground">
                 Buka{" "}
-                <span className="text-warm-gradient">arsip 3 tahun</span>
+                <span className="text-warm-gradient">ungkapan selama ini</span>
                 <br className="hidden sm:block" /> dengan kode namamu.
               </h1>
 
@@ -161,7 +161,7 @@ export default function GatewayPage() {
                       setValue(e.target.value);
                       if (error) setError(null);
                     }}
-                    placeholder="Masukkan kode namamu untuk membuka arsip 3 tahun..."
+                    placeholder="Masukkan kode namamu untuk membuka ungkapan selama ini..."
                     autoComplete="off"
                     autoCorrect="off"
                     autoCapitalize="off"

@@ -215,7 +215,7 @@ function LoginForm() {
 
       <footer className="relative z-10 mt-auto px-5 sm:px-8 py-4 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/50">
         <div className="flex items-center justify-between">
-          <span>arsip-3-tahun · admin</span>
+          <span>ungkapan-selama-ini · admin</span>
           <span className="hidden sm:inline">restricted area</span>
         </div>
       </footer>
