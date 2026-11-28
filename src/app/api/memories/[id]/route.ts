@@ -12,6 +12,7 @@ import {
   type LineConfig,
 } from "@/data/memories";
 import { validateSvgIcons } from "@/lib/svg";
+import { sanitizeLineConfig } from "@/lib/media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -189,7 +190,7 @@ export async function PUT(
       songArtist: fstr(form, "songArtist", existing.songArtist),
       enhancedLrc,
       plainLines: JSON.stringify(plainLines),
-      lineConfig: JSON.stringify(lineConfig),
+      lineConfig: JSON.stringify(sanitizeLineConfig(lineConfig)),
       svgIcons: svgIconsJson,
       iconLayout: normalizeIconLayout(
         fstr(

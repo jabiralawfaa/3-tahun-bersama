@@ -39,6 +39,10 @@ export interface ParsedLrcLine {
   iconId?: string;
   /** Pilihan manual beberapa ikon (mode Ramai memakai semuanya). */
   iconIds?: string[];
+  /** URL gambar dari pustaka Media (menggantikan ikon SVG di slotnya). */
+  imageUrl?: string;
+  /** Baris LRC bergaya ramai (ikon kecil di sekeliling, tanpa refleksi). */
+  crowd?: boolean;
 }
 
 /** Konversi "mm:ss.xx" atau "mm:ss" ke detik (number). */
@@ -119,9 +123,12 @@ export function parseEnhancedLrc(
       text: line.text,
       words: line.words,
       animationPreset: cfg?.animationPreset ?? line.animationPreset,
-      reflection: cfg?.reflection ?? line.reflection,
+      // Baris ramai tidak punya refleksi.
+      reflection: cfg?.crowd ? "" : (cfg?.reflection ?? line.reflection),
       iconId: cfg?.iconIds?.[0] ?? cfg?.iconId,
       iconIds: cfg?.iconIds,
+      imageUrl: cfg?.imageUrl,
+      crowd: cfg?.crowd === true,
     };
   });
 
@@ -169,6 +176,8 @@ export function buildPlainTimeline(
     animationPreset?: AnimationPreset;
     iconId?: string;
     iconIds?: string[];
+    imageUrl?: string;
+    crowd?: boolean;
   }[] = [],
 ): ParsedLrcLine[] {
   const count = plainLines.length;
@@ -187,6 +196,7 @@ export function buildPlainTimeline(
       reflection: cfg?.reflection ?? "",
       iconId: cfg?.iconIds?.[0] ?? cfg?.iconId,
       iconIds: cfg?.iconIds,
+      imageUrl: cfg?.imageUrl,
     };
   });
 }

@@ -17,6 +17,7 @@ import type {
 } from "@/data/memories";
 import { ICON_NONE, resolveLineIcon, type SvgIcon } from "@/lib/svg";
 import { AnimatedSvgIcon } from "@/components/svg-icon/AnimatedSvgIcon";
+import { LineImage } from "@/components/media/LineImage";
 
 /**
  * KineticLyrics (versi ringan)
@@ -74,6 +75,18 @@ export const KineticLyrics = memo(function KineticLyrics({
 }: KineticLyricsProps) {
   const activeLine = activeIndex >= 0 ? lines[activeIndex] : undefined;
 
+  /* --- Muat lebih dulu gambar 2 baris berikutnya (anti pop-in) --- */
+  useEffect(() => {
+    for (let k = 1; k <= 2; k++) {
+      const url = lines[activeIndex + k]?.imageUrl;
+      if (url) {
+        const im = new Image();
+        im.decoding = "async";
+        im.src = url;
+      }
+    }
+  }, [lines, activeIndex]);
+
   /* --- Maksimal SATU layer yang sedang keluar --- */
   const [leavingIndex, setLeavingIndex] = useState<number | null>(null);
   const prevIndexRef = useRef(activeIndex);
@@ -119,6 +132,7 @@ export const KineticLyrics = memo(function KineticLyrics({
   const activeIcon = activeLine
     ? resolveLineIcon(activeLine.index, activeLine.iconId, icons)
     : null;
+  const activeImage = activeLine?.imageUrl ?? null;
 
   return (
     <div
@@ -133,11 +147,15 @@ export const KineticLyrics = memo(function KineticLyrics({
         <span>{mode === "plain" ? "spoken" : "kinetic-lyrics"}</span>
         <span className="opacity-40">·</span>
         <span className="text-amber-warm/70">{preset}</span>
-        {activeIcon && (
+        {(activeImage || activeIcon) && (
           <>
             <span className="opacity-40">·</span>
             <span className="text-amber-warm/70">
-              {activeIcon.mode === "fill" ? "icon:fill" : "icon:neon"}
+              {activeImage
+                ? "image"
+                : activeIcon?.mode === "fill"
+                  ? "icon:fill"
+                  : "icon:neon"}
             </span>
           </>
         )}
@@ -161,6 +179,7 @@ export const KineticLyrics = memo(function KineticLyrics({
                 leavingLine.iconId,
                 icons,
               )}
+              image={leavingLine.imageUrl ?? null}
               prevText={lines[leavingLine.index - 1]?.text}
               nextText={lines[leavingLine.index + 1]?.text}
             />
@@ -176,6 +195,7 @@ export const KineticLyrics = memo(function KineticLyrics({
               layout={iconLayout}
               icons={icons}
               icon={activeIcon}
+              image={activeImage}
               prevText={lines[activeLine.index - 1]?.text}
               nextText={lines[activeLine.index + 1]?.text}
             />
@@ -201,6 +221,8 @@ interface LayerProps {
   /** Seluruh pustaka ikon (dipakai tata letak "ramai"). */
   icons: SvgIcon[];
   icon: SvgIcon | null;
+  /** URL gambar dari pustaka Media; bila ada menggantikan ikon SVG. */
+  image: string | null;
   prevText?: string;
   nextText?: string;
 }
@@ -214,15 +236,36 @@ const Layer = memo(function Layer({
   layout,
   icons,
   icon,
+  image,
   prevText,
   nextText,
 }: LayerProps) {
   const preset: AnimationPreset = line.animationPreset;
   // Genap = ikon di kiri, ganjil = ikon di kanan (bergantian).
   const side: Side = line.index % 2 === 1 ? "right" : "left";
-  const hasIcon = !!icon;
+  const hasIcon = !!icon || !!image;
   // Durasi "kamera" = durasi baris, dibatasi agar gerak tetap terasa.
   const driftSeconds = Math.min(Math.max(line.endTime - line.time, 2.5), 14);
+
+  // Mode LRC + baris "ramai": lirik di tengah, 3–5 ikon kecil di sekeliling,
+  // tanpa refleksi & tanpa pratinjau baris (sama konsep dengan mode tanpa LRC).
+  if (mode === "lrc" && line.crowd) {
+    return (
+      <PlainLayer
+        line={line}
+        total={total}
+        phase={phase}
+        layout="crowd"
+        icons={icons}
+        icon={icon}
+        image={image}
+        side={side}
+        driftSeconds={driftSeconds}
+        lrc
+        activeWord={activeWord}
+      />
+    );
+  }
 
   if (mode === "plain") {
     return (
@@ -233,20 +276,17 @@ const Layer = memo(function Layer({
         layout={layout}
         icons={icons}
         icon={icon}
+        image={image}
         side={side}
         driftSeconds={driftSeconds}
       />
     );
   }
 
-  const textSize =
-    mode === "plain"
-      ? hasIcon
-        ? "text-3xl sm:text-5xl lg:text-6xl leading-[1.15]"
-        : "text-4xl sm:text-6xl md:text-7xl leading-[1.15]"
-      : hasIcon
-        ? "text-2xl sm:text-4xl lg:text-5xl leading-tight"
-        : "text-3xl sm:text-5xl md:text-6xl leading-tight";
+  // Hanya mode LRC yang sampai di sini (mode plain sudah memakai PlainLayer).
+  const textSize = hasIcon
+    ? "text-2xl sm:text-4xl lg:text-5xl leading-tight"
+    : "text-3xl sm:text-5xl md:text-6xl leading-tight";
 
   return (
     <div
@@ -270,14 +310,23 @@ const Layer = memo(function Layer({
             : ""
         }`}
       >
-        {icon && (
+        {(image || icon) && (
           <div className="kl-icon-cell">
-            <AnimatedSvgIcon
-              icon={icon}
-              side={side}
-              size={ICON_SIZE}
-              phase={phase === "enter" ? "in" : "out"}
-            />
+            {image ? (
+              <LineImage
+                src={image}
+                side={side}
+                variant="cell"
+                phase={phase === "enter" ? "in" : "out"}
+              />
+            ) : icon ? (
+              <AnimatedSvgIcon
+                icon={icon}
+                side={side}
+                size={ICON_SIZE}
+                phase={phase === "enter" ? "in" : "out"}
+              />
+            ) : null}
           </div>
         )}
 
@@ -430,8 +479,11 @@ function PlainLayer({
   layout,
   icons,
   icon,
+  image,
   side,
   driftSeconds,
+  lrc = false,
+  activeWord = -2,
 }: {
   line: ParsedLrcLine;
   total: number;
@@ -439,13 +491,18 @@ function PlainLayer({
   layout: IconLayout;
   icons: SvgIcon[];
   icon: SvgIcon | null;
+  image: string | null;
   side: Side;
   driftSeconds: number;
+  /** true = baris mode LRC bergaya ramai (highlight per kata tetap jalan). */
+  lrc?: boolean;
+  activeWord?: number;
 }) {
   const preset = line.animationPreset;
   const iconPhase = phase === "enter" ? "in" : "out";
   const none = line.iconId === ICON_NONE;
-  const single = layout === "single" && !!icon;
+  // Gambar selalu tampil sebagai "hero" di atas ucapan (ucapan ikut turun).
+  const single = !!image || (layout === "single" && !!icon);
 
   const crowd = useMemo(
     () =>
@@ -461,13 +518,16 @@ function PlainLayer({
     [layout, none, line.index, line.iconId, line.iconIds, icons],
   );
 
-  const textSize = single
-    ? "text-3xl sm:text-5xl md:text-6xl leading-[1.15]"
-    : "text-4xl sm:text-6xl md:text-7xl leading-[1.15]";
+  const textSize =
+    single || lrc
+      ? "text-3xl sm:text-5xl md:text-6xl leading-[1.15]"
+      : "text-4xl sm:text-6xl md:text-7xl leading-[1.15]";
 
   return (
     <div
-      className={`kl-layer kl-layer--plain ${single ? "kl-layer--single" : ""}`}
+      className={`kl-layer kl-layer--plain ${single ? "kl-layer--single" : ""} ${
+        lrc ? "kl-layer--lrc-crowd" : ""
+      }`}
       data-phase={phase}
       data-preset={preset}
       data-side={side}
@@ -501,22 +561,31 @@ function PlainLayer({
       )}
 
       {/* Individual: satu ikon lebih besar di atas ucapan */}
-      {single && icon && (
+      {single && (image || icon) && (
         <div className="kl-single-icon">
-          <AnimatedSvgIcon
-            icon={icon}
-            side={side}
-            size="min(46vw, 11.5rem, 27vh)"
-            phase={iconPhase}
-          />
+          {image ? (
+            <LineImage
+              src={image}
+              side={side}
+              variant="hero"
+              phase={iconPhase}
+            />
+          ) : icon ? (
+            <AnimatedSvgIcon
+              icon={icon}
+              side={side}
+              size="min(46vw, 11.5rem, 27vh)"
+              phase={iconPhase}
+            />
+          ) : null}
         </div>
       )}
 
       <TextFrame
         line={line}
         total={total}
-        mode="plain"
-        activeWord={-2}
+        mode={lrc ? "lrc" : "plain"}
+        activeWord={lrc ? activeWord : -2}
         preset={preset}
         driftSeconds={driftSeconds}
         textSize={textSize}

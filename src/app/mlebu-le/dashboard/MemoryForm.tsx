@@ -26,6 +26,7 @@ import {
   type Memory,
   type MemoryMode,
 } from "@/data/memories";
+import type { MediaItem } from "@/lib/media";
 import { ICON_NONE, parseSvg, type SvgIcon, type SvgNode } from "@/lib/svg";
 import { SvgIconManager, validateIconsClient } from "./SvgIconManager";
 import { AnimatedBackground } from "@/app/for/[slug]/components/AnimatedBackground";
@@ -118,6 +119,25 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
 
   // Pustaka ikon SVG animasi (muncul bergantian kiri/kanan tiap baris).
   const [svgIcons, setSvgIcons] = useState<SvgIcon[]>(initial?.svgIcons ?? []);
+
+  // Pustaka gambar (menu Media) — dipilih per baris lewat dropdown.
+  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [mediaState, setMediaState] = useState<"loading" | "ok" | "error">("loading");
+  const loadMedia = useCallback(async () => {
+    setMediaState("loading");
+    try {
+      const res = await fetch("/api/media");
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      setMedia(data.media ?? []);
+      setMediaState("ok");
+    } catch {
+      setMediaState("error");
+    }
+  }, []);
+  useEffect(() => {
+    loadMedia();
+  }, [loadMedia]);
 
   // Saat ikon dihapus, lepas referensi iconId pada baris yang memakainya
   // (baris kembali ke mode otomatis).
@@ -627,8 +647,17 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
             >
               <p className="text-xs text-muted-foreground mb-3">
                 {mode === "lrc"
-                  ? "Teks refleksi/pengakuan pribadi yang muncul di bawah baris lirik saat diputar. Pilih preset animasi dan ikon SVG per baris."
-                  : "Pilih preset animasi dan ikon SVG untuk tiap ucapan. Ucapan akan tampil sebagai hero utama (tanpa highlight per kata) bergantian selama durasi yang dibagi rata."}
+                  ? "Teks refleksi/pengakuan pribadi yang muncul di bawah baris lirik saat diputar. Pilih preset animasi, ikon SVG, dan gambar per baris."
+                  : "Pilih preset animasi, ikon SVG, dan gambar untuk tiap ucapan. Ucapan akan tampil sebagai hero utama (tanpa highlight per kata) bergantian selama durasi yang dibagi rata."}{" "}
+                Gambar diunggah lewat tombol <span className="text-amber-warm/80">Media</span>{" "}
+                di header dashboard; bila dipilih, gambar menggantikan ikon SVG baris itu.{" "}
+                <button
+                  type="button"
+                  onClick={loadMedia}
+                  className="text-amber-warm/80 underline underline-offset-2 hover:text-amber-warm"
+                >
+                  muat ulang daftar gambar
+                </button>
               </p>
               <div className="space-y-3 thin-scroll max-h-[28rem] overflow-y-auto pr-1">
                 {Array.from({ length: lineCount }, (_, i) => {
@@ -645,6 +674,41 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                           {ctx.length > 40 ? "…" : ""}
                         </span>
                         <div className="flex flex-wrap items-center gap-2">
+                          {mode === "lrc" && (
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={!!lineConfig[i]?.crowd}
+                              onClick={() =>
+                                patchLine(i, {
+                                  crowd: lineConfig[i]?.crowd ? undefined : true,
+                                })
+                              }
+                              title="Mode ramai: 3–5 ikon kecil di sekeliling lirik (tanpa refleksi)"
+                              className={`rounded border px-2 py-1 font-mono text-[11px] transition-colors ${
+                                lineConfig[i]?.crowd
+                                  ? "border-amber-warm/60 bg-amber-warm/15 text-amber-warm"
+                                  : "border-white/10 bg-midnight text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              ramai: {lineConfig[i]?.crowd ? "ya" : "tidak"}
+                            </button>
+                          )}
+                          <LineImageSelect
+                            media={media}
+                            state={mediaState}
+                            imageId={lineConfig[i]?.imageId}
+                            imageUrl={lineConfig[i]?.imageUrl}
+                            label={`Gambar baris ${i + 1}`}
+                            onChange={(m) =>
+                              patchLine(
+                                i,
+                                m
+                                  ? { imageId: m.id, imageUrl: m.url }
+                                  : { imageId: undefined, imageUrl: undefined },
+                              )
+                            }
+                          />
                           <select
                             className="rounded border border-white/10 bg-midnight px-2 py-1 text-[11px] font-mono text-foreground outline-none focus:border-amber-warm/40"
                             value={lineConfig[i]?.animationPreset ?? "blur-fade"}
@@ -668,7 +732,7 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                           icons={svgIcons}
                           iconId={lineConfig[i]?.iconId}
                           iconIds={lineConfig[i]?.iconIds}
-                          multi={mode === "plain" && iconLayout === "crowd"}
+                          multi={(mode === "plain" && iconLayout === "crowd") || (mode === "lrc" && !!lineConfig[i]?.crowd)}
                           side={i % 2 === 0 ? "kiri" : "kanan"}
                           onChange={(patch) => patchLine(i, patch)}
                         />
@@ -677,11 +741,16 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                           jadi konten utama, tidak perlu subteks. */}
                       {mode === "lrc" && (
                         <textarea
-                          className="thin-scroll w-full resize-y rounded border border-white/10 bg-midnight/60 px-3 py-2 text-sm text-foreground outline-none focus:border-amber-warm/40"
+                          className="thin-scroll w-full resize-y rounded border border-white/10 bg-midnight/60 px-3 py-2 text-sm text-foreground outline-none focus:border-amber-warm/40 disabled:cursor-not-allowed disabled:opacity-40"
                           rows={2}
-                          value={lineConfig[i]?.reflection ?? ""}
+                          disabled={!!lineConfig[i]?.crowd}
+                          value={lineConfig[i]?.crowd ? "" : (lineConfig[i]?.reflection ?? "")}
                           onChange={(e) => patchLine(i, { reflection: e.target.value })}
-                          placeholder="Refleksi/pengakuan untuk baris ini…"
+                          placeholder={
+                            lineConfig[i]?.crowd
+                              ? "Baris mode ramai tidak memiliki refleksi."
+                              : "Refleksi/pengakuan untuk baris ini…"
+                          }
                         />
                       )}
                     </div>
@@ -699,7 +768,7 @@ export function MemoryForm({ initial, onSave, onCancel }: MemoryFormProps) {
                   className={`${inputCls} min-h-[80px] resize-y`}
                   value={form.finalMessage}
                   onChange={(e) => set("finalMessage", e.target.value)}
-                  placeholder="Mis. Entah kamu sadar atau tidak, selama 3 tahun ini, aku mencintaimu"
+                  placeholder="Mis. Entah kamu sadar atau tidak, selama ini, aku mencintaimu"
                 />
               </Field>
               <Field label="Label frame penutup (monospace)">
@@ -1133,5 +1202,74 @@ function IconThumb({ svg }: { svg: string }) {
     >
       {render(parsed.value.nodes)}
     </svg>
+  );
+}
+
+/* ---------- Dropdown gambar (dari pustaka Media) per baris ---------- */
+function LineImageSelect({
+  media,
+  state,
+  imageId,
+  imageUrl,
+  label,
+  onChange,
+}: {
+  media: MediaItem[];
+  state: "loading" | "ok" | "error";
+  imageId?: string;
+  imageUrl?: string;
+  label: string;
+  onChange: (m: MediaItem | null) => void;
+}) {
+  const known = !!imageId && media.some((m) => m.id === imageId);
+  // Gambar terpilih yang tidak ada di daftar (mis. daftar belum termuat).
+  const orphan = !!imageId && !known;
+  const current = media.find((m) => m.id === imageId);
+  const thumb = current?.url ?? imageUrl;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {thumb && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumb}
+          alt=""
+          className="h-7 w-7 rounded border border-white/10 object-cover"
+        />
+      )}
+      <select
+        className="max-w-[10rem] rounded border border-white/10 bg-midnight px-2 py-1 text-[11px] font-mono text-foreground outline-none focus:border-amber-warm/40"
+        value={imageId ?? ""}
+        aria-label={label}
+        title={
+          state === "error"
+            ? "Gagal memuat daftar gambar"
+            : media.length === 0 && state === "ok"
+              ? "Belum ada gambar — unggah lewat menu Media"
+              : "Pilih gambar dari pustaka Media"
+        }
+        onChange={(e) => {
+          const m = media.find((x) => x.id === e.target.value) ?? null;
+          onChange(m);
+        }}
+      >
+        <option value="">
+          {state === "loading"
+            ? "gambar: memuat…"
+            : state === "error"
+              ? "gambar: gagal memuat"
+              : "gambar: tanpa"}
+        </option>
+        {orphan && (
+          <option value={imageId}>
+            gambar: (tersimpan, belum ada di daftar)
+          </option>
+        )}
+        {media.map((m) => (
+          <option key={m.id} value={m.id}>
+            gambar: {m.name}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }

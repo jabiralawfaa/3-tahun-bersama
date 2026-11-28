@@ -472,6 +472,70 @@
   }
 }
 
+/* --- Gambar dari pustaka Media (slot ikon sebuah baris) --- */
+.kl-img {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  opacity: 0;
+  transform: translate3d(-22px, 8px, 0) scale(0.9) rotate(var(--kl-img-rot, -2deg));
+  transition:
+    opacity 0.45s ease,
+    transform 0.45s ease;
+  will-change: transform, opacity;
+}
+.kl-img--right {
+  transform: translate3d(22px, 8px, 0) scale(0.9) rotate(var(--kl-img-rot, 2deg));
+}
+.kl-img.is-on {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1) rotate(var(--kl-img-rot, 0deg));
+  transition:
+    opacity 0.8s ease,
+    transform 1s cubic-bezier(0.2, 0.9, 0.25, 1.15);
+}
+.kl-img-idle {
+  animation: kl-img-float 7s ease-in-out infinite;
+}
+.kl-img img {
+  display: block;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--amber-warm, #e8a23d) 38%, transparent),
+    0 14px 40px rgba(0, 0, 0, 0.5),
+    0 0 36px color-mix(in srgb, var(--amber-warm, #e8a23d) 22%, transparent);
+}
+.kl-img--cell img {
+  max-width: min(100%, 22rem);
+  max-height: min(36vh, 20rem);
+}
+.kl-img--hero img {
+  max-width: min(78vw, 24rem);
+  max-height: min(30vh, 15rem);
+}
+@keyframes kl-img-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -5px, 0);
+  }
+}
+[data-perf="low"] .kl-img-idle {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kl-img-idle {
+    animation: none;
+  }
+}
+
 /* --- Mode tanpa LRC: ucapan di tengah + ikon ramai / individual --- */
 .kl-stage--plain {
   min-height: 56vh;
@@ -480,6 +544,10 @@
   position: relative;
   align-self: stretch;
   justify-content: center;
+}
+/* Baris LRC bergaya ramai: ruang cukup agar ikon mengisi sekitar lirik */
+.kl-layer--lrc-crowd {
+  min-height: 60vh;
 }
 .kl-layer--single .kl-single-icon {
   display: flex;

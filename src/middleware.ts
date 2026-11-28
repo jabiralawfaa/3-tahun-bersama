@@ -6,6 +6,7 @@
  * - /mlebu-le/dashboard            -> butuh cookie admin valid
  * - /api/memories (GET/POST)       -> butuh admin
  * - /api/memories/[id] (PUT/DELETE)-> butuh admin
+ * - /api/media, /api/media/[id]    -> butuh admin (pustaka gambar)
  *
  * Rute publik: /, /for/[slug], /api/validate-code,
  * /api/memories/by-slug/[slug], /api/admin/login, /api/admin/logout.
@@ -33,7 +34,9 @@ export async function middleware(req: NextRequest) {
   // API tulis / list (admin only). by-slug & validate-code tetap publik.
   if (
     pathname === "/api/memories" ||
-    /^\/api\/memories\/[^/]+$/.test(pathname)
+    /^\/api\/memories\/[^/]+$/.test(pathname) ||
+    pathname === "/api/media" ||
+    /^\/api\/media\/[^/]+$/.test(pathname)
   ) {
     const token = req.cookies.get(ADMIN_COOKIE)?.value;
     const user = await verifyToken(token);
@@ -49,5 +52,11 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/mlebu-le/dashboard", "/api/memories", "/api/memories/:id"],
+  matcher: [
+    "/mlebu-le/dashboard",
+    "/api/memories",
+    "/api/memories/:id",
+    "/api/media",
+    "/api/media/:id",
+  ],
 };

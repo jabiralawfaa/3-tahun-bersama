@@ -1,7 +1,7 @@
 /**
  * data/memories.ts
  * ------------------------------------------------------------------
- * Konfigurasi modular arsip kenangan kelulusan kelas 3 tahun.
+ * Konfigurasi modular arsip kenangan kelulusan kelas (ungkapan selama ini).
  *
  * Setiap entri mewakili satu orang dengan "Kode Nama" rahasia.
  * Untuk menambah teman sekelas baru, cukup salin satu blok `Memory`
@@ -57,7 +57,7 @@ export interface MemoryTheme {
 }
 
 export interface LineConfig {
-  /** Subteks refleksi / pengakuan perasaan pribadi selama 3 tahun */
+  /** Subteks refleksi / pengakuan perasaan pribadi (ungkapan selama ini) */
   reflection: string;
   /** Preset animasi kinetic typography untuk baris ini */
   animationPreset: AnimationPreset;
@@ -67,6 +67,14 @@ export interface LineConfig {
   /** Pilihan manual beberapa ikon (urutan = prioritas). Mode LRC/Individual
    *  memakai yang pertama; mode Ramai memakai semuanya (maks. 5). */
   iconIds?: string[];
+  /** Gambar dari pustaka Media (dipilih di dropdown per baris). Bila ada,
+   *  gambar tampil di slot ikon baris ini; imageUrl disalin saat memilih
+   *  agar halaman publik tidak butuh akses ke daftar Media. */
+  imageId?: string;
+  imageUrl?: string;
+  /** Mode LRC saja: true = baris tampil "ramai" (3–5 ikon kecil di sekeliling
+   *  lirik, lirik di tengah). Baris ramai TIDAK punya refleksi. */
+  crowd?: boolean;
 }
 
 export interface Memory {
@@ -146,13 +154,13 @@ const STARLA_LRC = `[ti:Surat Cinta untuk Starla]
 /**
  * Pemetaan refleksi & preset animasi per baris lirik.
  * Urutan sejajar dengan baris LRC di atas (24 baris lirik).
- * Refleksi ditulis sebagai pengakuan perasaan pribadi selama 3 tahun
+ * Refleksi ditulis sebagai pengakuan perasaan pribadi (ungkapan selama ini)
  * di kelas, terikat emosi pada baris lirik yang bersangkutan.
  */
 const STARLA_LINE_CONFIG: LineConfig[] = [
   {
     reflection:
-      "Tiga tahun berlalu secepat kedipan mata — dan aku masih di sini, diam mengagumi mu dari kursi yang berbeda.",
+      "Waktu berlalu secepat kedipan mata — dan aku masih di sini, diam mengagumi mu dari kursi yang berbeda.",
     animationPreset: "blur-fade",
   },
   {
@@ -182,7 +190,7 @@ const STARLA_LINE_CONFIG: LineConfig[] = [
   },
   {
     reflection:
-      "Tiga tahun aku habiskan menahan, menyimpan, dan merahasiakan — di balik setiap kode yang kutulis.",
+      "Sekian lama aku habiskan menahan, menyimpan, dan merahasiakan — di balik setiap kode yang kutulis.",
     animationPreset: "3d-flip",
   },
   {
@@ -227,12 +235,12 @@ const STARLA_LINE_CONFIG: LineConfig[] = [
   },
   {
     reflection:
-      "Kini aku berdiri di hadapanmu, melepaskan seluruh keraguan yang kutahan selama tiga tahun.",
+      "Kini aku berdiri di hadapanmu, melepaskan seluruh keraguan yang kutahan selama ini.",
     animationPreset: "blur-fade",
   },
   {
     reflection:
-      "Tiga tahun kuhabiskan merancang momen ini — di latar belakang, tak pernah terlihat.",
+      "Sekian lama kuhabiskan merancang momen ini — di latar belakang, tak pernah terlihat.",
     animationPreset: "zoom-in",
   },
   {
@@ -262,12 +270,12 @@ const STARLA_LINE_CONFIG: LineConfig[] = [
   },
   {
     reflection:
-      "Karena selama ini… tiga tahun penuh… aku habiskan untukmu.",
+      "Karena selama ini… sekian lama… aku habiskan untukmu.",
     animationPreset: "zoom-out",
   },
   {
     reflection:
-      "Dan inilah akhirnya — pengakuanku yang selama tiga tahun ku rapikan dalam diam.",
+      "Dan inilah akhirnya — pengakuanku yang selama ini ku rapikan dalam diam.",
     animationPreset: "blur-fade",
   },
 ];
@@ -359,7 +367,7 @@ export const STARLA_SEED: Memory = {
   svgIcons: STARTER_ICONS.map((s, i) => ({ ...s, id: `starter-${i + 1}` })),
   iconLayout: "crowd",
   finalMessage:
-    "Entah kamu sadar atau tidak, selama 3 tahun ini, aku mencintaimu",
+    "Entah kamu sadar atau tidak, selama ini, aku mencintaimu",
   finalFrameLabel: "Final_Confession.tsx",
 };
 

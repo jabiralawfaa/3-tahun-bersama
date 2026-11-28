@@ -10,9 +10,11 @@ import {
   Trash2,
   Music2,
   RefreshCw,
+  ImageIcon,
 } from "lucide-react";
 import type { Memory } from "@/data/memories";
 import { MemoryForm } from "./MemoryForm";
+import { MediaManager } from "./MediaManager";
 
 /**
  * Dashboard Admin (`/mlebu-le/dashboard`)
@@ -26,6 +28,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Memory | null>(null);
   const [creating, setCreating] = useState(false);
+  const [showMedia, setShowMedia] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Memory | null>(null);
 
   const fetchMemories = useCallback(async () => {
@@ -103,11 +106,18 @@ export default function DashboardPage() {
               admin dashboard
             </p>
             <h1 className="text-lg font-semibold tracking-tight">
-              Arsip 3 Tahun — Panel
+              Ungkapan Selama Ini — Panel
             </h1>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowMedia(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-amber-warm/30 bg-amber-warm/10 px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-amber-warm transition-colors hover:bg-amber-warm/20"
+          >
+            <ImageIcon className="h-3.5 w-3.5" /> Media
+          </button>
           <button
             type="button"
             onClick={fetchMemories}
@@ -234,7 +244,7 @@ export default function DashboardPage() {
 
       <footer className="relative z-10 mt-auto px-5 sm:px-8 py-4 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/50 border-t border-white/8">
         <div className="flex items-center justify-between">
-          <span>arsip-3-tahun · admin panel</span>
+          <span>ungkapan-selama-ini · admin panel</span>
           <a href="/" className="hover:text-foreground transition-colors">
             ← lihat gerbang
           </a>
@@ -253,6 +263,11 @@ export default function DashboardPage() {
             }}
           />
         )}
+      </AnimatePresence>
+
+      {/* Pustaka gambar (Media) */}
+      <AnimatePresence>
+        {showMedia && <MediaManager onClose={() => setShowMedia(false)} />}
       </AnimatePresence>
 
       {/* Konfirmasi hapus */}

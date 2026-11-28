@@ -65,3 +65,19 @@ model Memory {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+/// Pustaka gambar (menu Media di dashboard). File disimpan di Vercel Blob,
+/// baris ini hanya menyimpan nama + URL-nya. Dipilih per baris ucapan lewat
+/// LineConfig.imageId / imageUrl.
+model Media {
+  id        String   @id @default(cuid())
+  /// Nama yang diberikan admin (mudah dikenali di dropdown)
+  name      String
+  /// URL publik file di Blob
+  url       String
+  mime      String   @default("image/webp")
+  size      Int      @default(0)
+  width     Int      @default(0)
+  height    Int      @default(0)
+  createdAt DateTime @default(now())
+}
